@@ -1,0 +1,16 @@
+{
+  "name": "context-notify",
+  "owner": { "name": "kawaz" },
+  "metadata": {
+    "description": "Context usage threshold notifier for Claude Code",
+    "version": "0.1.0",
+    "license": "MIT"
+  },
+  "plugins": [
+    {
+      "name": "context-notify",
+      "description": "セッション自身に context 使用率を知らせる。閾値 (既定 20/40/60/80/90/95/97%) を跨いだ時だけ hook で文面を注入する。閾値と文面はユーザ設定可能。Tell the running session how much context it has used, once per threshold crossed.",
+      "source": "./"
+    }
+  ]
+}
