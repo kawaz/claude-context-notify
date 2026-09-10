@@ -11,12 +11,15 @@ argv[1] is the role:
   config   -- not a hook. Called by /context-notify:config with the plugin
               data dir as argv[2]. Creates the config from the bundled
               template if absent, then prints the path and the thresholds.
+  check    -- not a hook. Called by /context-notify:setup after editing.
+              Validates the config and exits non-zero if it has problems.
 
 stdin: hook JSON. stdout: hookSpecificOutput.additionalContext, or nothing.
 """
 import json
 import os
 import pathlib
+import string
 import sys
 
 DEFAULT_WINDOW = 200_000
@@ -57,6 +60,75 @@ def load_config(path=None):
             continue
     urgent = cfg.get("urgent_from")
     return bands, (int(urgent) if isinstance(urgent, int) else 90)
+
+
+PLACEHOLDERS = ("pct", "used", "window")
+
+
+class _Lenient(dict):
+    """Leaves unknown placeholders as literal text instead of raising."""
+
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
+def render(template, pct, used, window):
+    """Fill a band message. A typo in the config must not break the session."""
+    values = _Lenient(pct=pct, used=f"{used:,}", window=f"{window:,}")
+    try:
+        return template.format_map(values)
+    except (IndexError, ValueError):
+        return template
+
+
+def check_config(path):
+    """Problems with a config file, as a list of human-readable lines."""
+    raw = load_json(path)
+    if raw is None:
+        return [f"JSON として読めません: {path}"]
+
+    problems = []
+    urgent = raw.get("urgent_from", 90)
+    if not isinstance(urgent, int) or not 1 <= urgent <= 100:
+        problems.append(f"urgent_from は 1〜100 の整数にしてください (現在: {urgent!r})")
+
+    entries = raw.get("bands")
+    if not isinstance(entries, list) or not entries:
+        return problems + ["bands は 1 件以上の配列にしてください"]
+
+    seen = []
+    for i, entry in enumerate(entries):
+        where = f"bands[{i}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{where}: オブジェクトにしてください")
+            continue
+        at = entry.get("at")
+        if not isinstance(at, int) or isinstance(at, bool) or not 1 <= at <= 100:
+            problems.append(f"{where}.at は 1〜100 の整数にしてください (現在: {at!r})")
+        else:
+            if at in seen:
+                problems.append(f"{where}.at = {at} が重複しています")
+            if seen and at < seen[-1]:
+                problems.append(f"{where}.at = {at} が昇順になっていません (前は {seen[-1]})")
+            seen.append(at)
+        msg = entry.get("message")
+        if not isinstance(msg, str) or not msg.strip():
+            problems.append(f"{where}.message は空でない文字列にしてください")
+            continue
+        for name in _placeholder_names(msg):
+            if name not in PLACEHOLDERS:
+                problems.append(
+                    f"{where}.message: 未知のプレースホルダ {{{name}}} "
+                    f"(使えるのは {', '.join('{%s}' % p for p in PLACEHOLDERS)})"
+                )
+    return problems
+
+
+def _placeholder_names(template):
+    try:
+        return [n for _, n, _, _ in string.Formatter().parse(template) if n]
+    except ValueError:
+        return []
 
 
 def state_path(session_id):
@@ -172,7 +244,7 @@ def measure(ev, bands):
     # Going down means a compact or clear reset the usage. Move the latch back
     # without saying anything.
     if band > prev and band in bands:
-        st["pending"] = bands[band].format(pct=pct, used=f"{used:,}", win=f"{win:,}")
+        st["pending"] = render(bands[band], pct=pct, used=used, window=win)
     sp.write_text(json.dumps(st))
     return band if band > prev else None
 
@@ -200,17 +272,34 @@ def show_config(data_dir):
     for at in sorted(bands):
         print(f"  {at:>3}%  {bands[at]}")
     print("\nこのファイルを編集すると閾値と文面を変えられます。")
-    print("プレースホルダ: {pct} 使用率 / {used} 使用トークン / {win} window")
+    print("プレースホルダ: {pct} 使用率 / {used} 使用トークン / {window} window")
+    report_problems(check_config(path))
+
+
+def report_problems(problems):
+    """Print a verdict. Returns the exit status the caller should use."""
+    if not problems:
+        print("\n設定は妥当です。")
+        return 0
+    print("\n設定に問題があります:")
+    for p in problems:
+        print(f"  - {p}")
+    return 1
 
 
 def main():
     role = sys.argv[1] if len(sys.argv) > 1 else "deliver"
 
-    if role == "config":
+    if role in ("config", "check"):
         arg = sys.argv[2] if len(sys.argv) > 2 else ""
         # The caller passes ${CLAUDE_PLUGIN_DATA}; an unexpanded template means
         # we are not running under a plugin install, so fall back to XDG.
-        show_config(arg if arg and "${" not in arg else None)
+        data_dir = arg if arg and "${" not in arg else None
+        if role == "check":
+            path = config_path(data_dir)
+            print(f"config: {path}")
+            sys.exit(report_problems(check_config(path)))
+        show_config(data_dir)
         return
 
     try:

@@ -3,31 +3,31 @@
   "bands": [
     {
       "at": 20,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {win} tokens)。以後 40%,60%,80%,90%,95% のタイミングで通知します。後半の作業ペースの参考にしてください。目安としては 90% 通知がきたら引き継ぎ準備を始める程度で OK です。"
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)。以後 40%,60%,80%,90%,95% のタイミングで通知します。後半の作業ペースの参考にしてください。目安としては 90% 通知がきたら引き継ぎ準備を始める程度で OK です。"
     },
     {
       "at": 40,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {win} tokens)"
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
     },
     {
       "at": 60,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {win} tokens)"
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
     },
     {
       "at": 80,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {win} tokens)、まだ作業継続して構いません。90% になったら pre-clear の実施タイミングの検討を始めてください"
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)、まだ作業継続して構いません。90% になったら pre-clear の実施タイミングの検討を始めてください"
     },
     {
       "at": 90,
-      "message": "メインコンテキストが {pct}% ({used} / {win} tokens) を超えました。今すぐ死ぬわけではないので落ち着いてください。継続中の作業があるならキリが良いところまで進めて構いません。新しい大きな作業には着手せず /pre-clear を実施して次セッションに繋いでください。次は 95% を超えた時点で声をかけます。"
+      "message": "メインコンテキストが {pct}% ({used} / {window} tokens) を超えました。今すぐ死ぬわけではないので落ち着いてください。継続中の作業があるならキリが良いところまで進めて構いません。新しい大きな作業には着手せず /pre-clear を実施して次セッションに繋いでください。次は 95% を超えた時点で声をかけます。"
     },
     {
       "at": 95,
-      "message": "ctx {pct}% ({used} / {win} tokens)。着手中の作業があれば早めに手放して pre-clear を開始してください。"
+      "message": "ctx {pct}% ({used} / {window} tokens)。着手中の作業があれば早めに手放して pre-clear を開始してください。"
     },
     {
       "at": 97,
-      "message": "ctx {pct}% ({used} / {win} tokens)！今すぐ /pre-clear を実施！"
+      "message": "ctx {pct}% ({used} / {window} tokens)！今すぐ /pre-clear を実施！"
     }
   ]
 }

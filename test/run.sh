@@ -117,6 +117,40 @@ check "config: 初回はテンプレから作成する" "テンプレから作�
 check "config: 作成したファイルを読んで閾値を並べる" "97%" "$out"
 [[ -f "$cfgdir/config.json" ]] || { echo "NG: config file not created"; fails=$((fails + 1)); }
 
+# --- a typo in a placeholder must not break the session -----------------------
+new_session
+transcript_with 33000
+cat > "$tmp/typo.json" <<'JSON'
+{"urgent_from": 90, "bands": [{"at": 50, "message": "TYPO {pcnt}% {pct}%"}]}
+JSON
+check "未知のプレースホルダはそのまま残して喋る" "TYPO {pcnt}% 66%" \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run deliver PostToolUse)"
+
+# --- check role: validation for /context-notify:setup --------------------------
+check_role() { CLAUDE_CONTEXT_NOTIFY_CONFIG="$1" python3 "$script" check 2>&1 || true; }
+
+check "check: 既定テンプレは妥当" "設定は妥当です" "$(check_role "$root/templates/config.json")"
+check "check: 未知のプレースホルダを指摘" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo.json")"
+
+cat > "$tmp/bad.json" <<'JSON'
+{"urgent_from": 900, "bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
+JSON
+bad_out="$(check_role "$tmp/bad.json")"
+check "check: urgent_from の範囲外を指摘" "urgent_from は 1〜100" "$bad_out"
+check "check: 昇順違反を指摘" "昇順になっていません" "$bad_out"
+check "check: 重複を指摘" "重複しています" "$bad_out"
+check "check: 空の文面を指摘" "空でない文字列" "$bad_out"
+
+printf 'not json' > "$tmp/broken.json"
+check "check: 壊れた JSON を指摘" "JSON として読めません" "$(check_role "$tmp/broken.json")"
+
+if CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/bad.json" python3 "$script" check >/dev/null 2>&1; then
+  echo "NG: check は問題があれば非ゼロで終了すべき"
+  fails=$((fails + 1))
+else
+  echo "ok: check: 問題があれば非ゼロで終了する"
+fi
+
 echo
 if ((fails)); then
   echo "$fails case(s) failed"

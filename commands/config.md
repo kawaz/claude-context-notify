@@ -21,4 +21,4 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 
 設定ファイルの形式は `bands` (`at` = 閾値 %、`message` = 文面) の配列と、
 `urgent_from` (この帯以上は `Stop` から即時に通知する下限) の 2 つ。
-文面では `{pct}` / `{used}` / `{win}` が使える。
+文面では `{pct}` / `{used}` / `{window}` が使える。

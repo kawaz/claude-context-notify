@@ -38,21 +38,42 @@ Then, to see (and create) your config:
 
 ## Configuring thresholds and wording
 
-`/context-notify:config` prints the config path and copies the bundled template there on first
-run. The file lives in the plugin data directory, so it survives plugin updates.
+There are two commands. Either way the config lives in the plugin data directory, so it
+survives plugin updates.
+
+| Command | Audience | What it does |
+|---|---|---|
+| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled template on first run, then prints the path and the current bands. **Never edits.** |
+| `/context-notify:setup [request]` | The model edits for you | Rewrites the config to match a free-form request, validates it, and reports the diff |
+
+Open the file yourself with `config`, or ask in words with `setup`:
+
+```bash
+/context-notify:setup make the 90% message shorter
+/context-notify:setup add a 70 threshold and drop 95 and 97
+/context-notify:setup            # no argument: shows the current bands and asks what to change
+```
+
+After editing, `setup` runs `ctx-notify.py check`, which verifies the JSON, the thresholds
+(integers 1–100, ascending, no duplicates), the presence of messages, and the spelling of
+every placeholder.
+
+### Config format
 
 ```json
 {
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "context {pct}% used ({used} / {win} tokens)." },
+    { "at": 20, "message": "context {pct}% used ({used} / {window} tokens)." },
     { "at": 90, "message": "context {pct}% used. Wrap up and write the handoff." }
   ]
 }
 ```
 
 - `bands[].at` — the threshold, in percent. Any number of bands, in any order.
-- `bands[].message` — what the session is told. `{pct}` / `{used}` / `{win}` are substituted.
+- `bands[].message` — what the session is told. `{pct}` (usage percent), `{used}` (tokens used)
+  and `{window}` (window size) are substituted. A misspelled placeholder is left as literal
+  text rather than breaking the session.
 - `urgent_from` — bands at or above this speak immediately from `Stop`, costing one extra
   continuation turn. Milder bands wait for a turn that was going to happen anyway.
 

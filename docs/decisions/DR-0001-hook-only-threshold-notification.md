@@ -86,9 +86,22 @@ transcript の `message.model` も upstream へ出るリクエストの `model` 
 ### 6. 閾値と文面はユーザ設定
 
 `${CLAUDE_PLUGIN_DATA}/config.json` (plugin update で保持される) に置き、無ければ
-同梱の `templates/config.json` を既定として読む。`/context-notify:config` が
-初回の複製とパス表示を担う。形式は JSON — python 標準ライブラリだけで読め、
-`jq` で lint できる。
+同梱の `templates/config.json` を既定として読む。形式は JSON — python 標準ライブラリ
+だけで読め、`jq` で lint できる。
+
+編集の入口は 2 本に分ける。`/context-notify:config` は**ユーザ専用**
+(`disable-model-invocation: true`) で、初回の複製とパス表示だけを担い編集はしない。
+`/context-notify:setup [自由文]` は**モデルが編集する**入口で、要望どおりに書き換えてから
+検証する (組み込みの `statusline-setup` / `update-config` と同じ「設定をエージェントに
+編集させる」型)。
+
+**検証はモデルの目視ではなく `ctx-notify.py check` が機械的に行う** — JSON の妥当性、
+閾値が 1〜100 の整数で昇順・重複なし、各帯に文面がある、プレースホルダの綴りが
+`{pct}` / `{used}` / `{window}` のいずれか。散文で「確認せよ」と書くより、
+非ゼロ終了で押し返せるほうが確実。
+
+なお **綴りを間違えたプレースホルダは hook 側では例外にしない** (そのまま文字として
+残す)。設定ミスでセッションの hook が毎回落ちるほうが害が大きい。
 
 ## Alternatives Considered
 

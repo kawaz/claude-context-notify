@@ -37,21 +37,40 @@ PostToolUse:Bash hook additional context: [context-notify] 現在のメインコ
 
 ## 閾値と文面のカスタマイズ
 
-`/context-notify:config` が設定ファイルのパスを表示し、初回は同梱テンプレをそこに複製する。
-置き場は plugin data dir なので、plugin を更新しても消えない。
+command は 2 本ある。設定ファイルはどちらも plugin data dir に置かれ、plugin を更新しても消えない。
+
+| command | 誰が使うか | 何をするか |
+|---|---|---|
+| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、パスと現在の閾値・文面を表示する。**編集はしない** |
+| `/context-notify:setup [要望]` | モデルに編集させる | 自由文の要望どおりに設定を書き換え、妥当性を検証して差分を報告する |
+
+自分でファイルを開いて直したいなら `config`、言葉で頼みたいなら `setup`:
+
+```bash
+/context-notify:setup 90% の文面をもっと短く
+/context-notify:setup 閾値に 70 を足して、95 と 97 は消して
+/context-notify:setup            # 引数なし = 現在値を見せて「何を変えますか」と聞く
+```
+
+`setup` は書き換えたあとに `ctx-notify.py check` を回し、JSON の妥当性・閾値
+(1〜100 の整数、昇順、重複なし)・文面の有無・プレースホルダの綴りを機械的に検査する。
+
+### 設定ファイルの形式
 
 ```json
 {
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {win} tokens)" },
+    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
     { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
 
 - `bands[].at` — 閾値 (%)。個数も順序も自由
-- `bands[].message` — 注入する文面。`{pct}` / `{used}` / `{win}` が展開される
+- `bands[].message` — 注入する文面。`{pct}` (使用率) / `{used}` (使用トークン数) /
+  `{window}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
+  セッションを壊さないようそのまま文字として残る
 - `urgent_from` — この帯以上は `Stop` から即時に喋る (継続ターンが 1 本増える)。
   それ未満の帯は「どうせ起きる次のターン」に相乗りする
 
