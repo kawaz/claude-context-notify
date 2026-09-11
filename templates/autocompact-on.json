@@ -1,0 +1,29 @@
+{
+  "urgent_from": 80,
+  "bands": [
+    {
+      "at": 20,
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)。このセッションは auto compact が有効で、{ac_pct}% ({ac_tokens} tokens) に達すると自動で要約に置き換わります。以後 40%, 60%, 80% と、auto compact の手前で通知します。"
+    },
+    {
+      "at": 40,
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
+    },
+    {
+      "at": 60,
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
+    },
+    {
+      "at": 80,
+      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)。auto compact が {ac_pct}% で走ります。要約に落とされたくない前提・決定事項があるなら、今のうちに docs か引き継ぎメモに書き出してください。自分のタイミングで畳みたいなら手動の /compact か /pre-clear を検討する頃合いです。"
+    },
+    {
+      "before_autocompact": 5,
+      "message": "auto compact まであと 5 ポイント ({pct}% / 発火は {ac_pct}%) です。ここから先は中断される前提で動いてください。着手中の作業は区切りをつけ、引き継ぎが要るなら今書いてください。"
+    },
+    {
+      "before_autocompact": 1,
+      "message": "auto compact 直前です ({pct}%、発火は {ac_pct}%)。次のやり取りで要約に切り替わる可能性が高いので、新しい作業を始めないでください。"
+    }
+  ]
+}

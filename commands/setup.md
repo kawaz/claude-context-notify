@@ -18,7 +18,7 @@ $ARGUMENTS
 1. 設定ファイルの場所を確かめ、無ければテンプレから作る:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" config "${CLAUDE_PLUGIN_DATA}"
+   "${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" config "${CLAUDE_PLUGIN_DATA}" "${CLAUDE_SESSION_ID}"
    ```
 
    出力の `config:` 行が対象ファイルのパス。
@@ -28,6 +28,10 @@ $ARGUMENTS
 
 3. 対象ファイルを Read してから、要望どおりに Edit で書き換える。
    要望に無いものは変えない (= 文面変更を頼まれたら閾値は触らない、逆も同じ)。
+
+   **設定にまだ `bands` が無い場合** (= profile 任せの初期状態) は、手順 1 の出力に
+   出ている現在の帯をそのまま `bands` として書き起こしてから、要望箇所だけを直す。
+   profile を切り替えたいだけの要望なら `bands` は作らず `profile` の値だけ変える。
 
 4. 書き換えたら検証する:
 
@@ -45,16 +49,23 @@ $ARGUMENTS
 
 ```json
 {
+  "profile": "auto",
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" }
+    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
+    { "before_autocompact": 5, "message": "auto compact ({ac_pct}%) まであと 5 ポイント。" }
   ]
 }
 ```
 
+- `profile` — `auto` (既定、auto compact の検出結果で帯を選ぶ) / `autocompact-on` /
+  `autocompact-off`。`bands` があれば profile は使われない
 - `bands[].at` — 閾値 (%)。1〜100 の整数、昇順、重複なし。個数は自由
+- `bands[].before_autocompact` — `at` の代わりに「auto compact 発火の N ポイント手前」に
+  置く (0〜50)。発火トークン数が不明なセッションではその帯は無視される
 - `bands[].message` — 跨いだ時にセッションへ注入する文面
 - `urgent_from` — この帯以上は `Stop` から即時に通知する (継続ターンが 1 本増える)。
   それ未満の帯は次のターンに相乗りする
 - 文面で使えるプレースホルダは `{pct}` (使用率) / `{used}` (使用トークン数) /
-  `{window}` (window の大きさ) の 3 つだけ
+  `{window}` (window の大きさ) / `{ac_pct}` (auto compact の発火率) /
+  `{ac_tokens}` (同トークン数) の 5 つだけ
