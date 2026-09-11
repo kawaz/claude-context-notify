@@ -187,6 +187,23 @@ check "検出: 閾値は window - 33k" '"threshold": 87000' "$out"
 
 printf '{"autoCompactWindow": 110000}' > "$CLAUDE_CONFIG_DIR/settings.json"
 check "検出: user settings の autoCompactWindow を読む" '"window": 110000' "$(detect)"
+printf '{"autoCompactWindow": 105000}' > "$CLAUDE_CONFIG_DIR/settings.local.json"
+check "検出: user の settings.local.json が settings.json に勝つ" '"window": 105000' "$(detect)"
+rm "$CLAUDE_CONFIG_DIR/settings.local.json"
+
+# CLAUDE_CONFIG_DIR does not reach hooks unless the user exported it; the config
+# dir has to come out of CLAUDE_ENV_FILE in that case.
+mkdir -p "$tmp/viaenvfile"
+printf '{"autoCompactWindow": 101000}' > "$tmp/viaenvfile/settings.json"
+check "検出: CLAUDE_ENV_FILE から config dir を割り出す" '"window": 101000' \
+  "$(unset CLAUDE_CONFIG_DIR
+     CLAUDE_ENV_FILE="$tmp/viaenvfile/session-env/abc/sessionstart-hook-0.sh" detect)"
+check "検出: CLAUDE_ENV_FILE が CLAUDE_CONFIG_DIR に優先する" '"window": 101000' \
+  "$(CLAUDE_ENV_FILE="$tmp/viaenvfile/session-env/abc/sessionstart-hook-0.sh" detect)"
+mkdir -p "$tmp/fakehome/.claude"
+printf '{"autoCompactWindow": 102000}' > "$tmp/fakehome/.claude/settings.json"
+check "検出: どちらも無ければ HOME/.claude を見る" '"window": 102000' \
+  "$(unset CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE; HOME="$tmp/fakehome" detect)"
 check "検出: env が settings に勝つ" '"window": 120000' \
   "$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=120000 detect)"
 

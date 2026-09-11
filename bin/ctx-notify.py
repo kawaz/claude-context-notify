@@ -199,15 +199,32 @@ def _cli_autocompact_window(limit=4):
     return None
 
 
+def config_dir():
+    """Where Claude Code keeps its settings for this session.
+
+    `CLAUDE_CONFIG_DIR` reaches hooks only when the user exported it themselves
+    (measured: it is absent otherwise). `CLAUDE_ENV_FILE`, which SessionStart
+    hooks do get, sits at `<config dir>/session-env/<session>/...`, so it names
+    the real directory even when the variable is unset.
+    """
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if env_file:
+        head, sep, _ = env_file.partition("/session-env/")
+        if sep and head:
+            return pathlib.Path(head)
+    return pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"))
+
+
 def _settings_files(cwd):
     """Settings files that can carry autoCompactWindow, highest precedence first."""
-    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    base = config_dir()
     project = pathlib.Path(cwd or ".")
     return [
-        pathlib.Path(config_dir) / "managed-settings.json",
+        base / "managed-settings.json",
         project / ".claude" / "settings.local.json",
         project / ".claude" / "settings.json",
-        pathlib.Path(config_dir) / "settings.json",
+        base / "settings.local.json",
+        base / "settings.json",
     ]
 
 
@@ -218,10 +235,9 @@ def detect_autocompact(cwd=None):
     docs/decisions/DR-0002. `window` is None when nothing pins one, which means
     Claude Code compacts reactively rather than at a threshold we can predict.
     """
-    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     enabled, why = True, "default"
 
-    global_config = load_json(pathlib.Path(config_dir) / ".claude.json") or {}
+    global_config = load_json(config_dir() / ".claude.json") or {}
     if global_config.get("autoCompactEnabled") is False:
         enabled, why = False, "autoCompactEnabled: false"
     for var in ("DISABLE_AUTO_COMPACT", "DISABLE_COMPACT"):

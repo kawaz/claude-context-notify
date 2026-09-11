@@ -74,7 +74,9 @@ Set `profile` to `autocompact-on` / `autocompact-off` to pin it. Writing your ow
 overrides the profile entirely.
 
 The trigger point comes from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, then `--autocompact <tokens>`,
-then the `autoCompactWindow` setting — minus a measured 33,000-token buffer. What is detectable
+then the `autoCompactWindow` setting (managed, project, then user, with the config directory
+located from `CLAUDE_ENV_FILE` since `CLAUDE_CONFIG_DIR` only reaches hooks when you export it
+yourself) — minus a measured 33,000-token buffer. What is detectable
 and what isn't is recorded in
 [DR-0002](./docs/decisions/DR-0002-autocompact-detection-and-profiles.md).
 

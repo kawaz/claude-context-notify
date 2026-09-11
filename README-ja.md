@@ -70,8 +70,9 @@ auto compact が閾値で走るセッションでは、95% や 97% の帯は撃�
 自分で `bands` を書いた場合は profile より優先される。
 
 発火トークン数は `CLAUDE_CODE_AUTO_COMPACT_WINDOW` env → `--autocompact <tokens>` →
-`autoCompactWindow` 設定 の順に探し、見つかった window から 33,000 を引いた値
-(実測した buffer)。検出の詳細と根拠は
+`autoCompactWindow` 設定 (managed → project → user) の順に探し、見つかった window から
+33,000 を引いた値 (実測した buffer)。設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
+(`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。検出の詳細と根拠は
 [DR-0002](./docs/decisions/DR-0002-autocompact-detection-and-profiles.md)。
 
 auto compact が走ると `PreCompact` hook が latch を戻し、新しい context の最初のターンで

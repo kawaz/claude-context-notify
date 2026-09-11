@@ -44,7 +44,25 @@ auto compact が閾値で走るセッションでは、95% や 97% の帯は**�
 
 settings 同士の優先順位は公式ドキュメントの順 (managed > `--settings` > project local >
 project > user) に従う。本 plugin は `--settings` で渡された一時ファイルの位置を知る
-手段が無いので、その層だけ読めない (下記「読めないもの」)。
+手段が無いので、その層だけ読めない (下記「読めないもの」)。user 層は
+`settings.local.json` → `settings.json` の順に見る。
+
+### config dir の在り処
+
+**`CLAUDE_CONFIG_DIR` は、ユーザ自身が export したときしか hook に届かない**
+(実測: `HOME` を差し替えて未設定で起動すると、hook の env に現れない)。
+未設定のほうが普通なので、これだけに頼ると user 層と `.claude.json` を読み損なう。
+
+代わりに **`CLAUDE_ENV_FILE` から割り出す**。この変数は `SessionStart` hook に渡され、
+値は `<config dir>/session-env/<session_id>/sessionstart-hook-0.sh` の形をしている
+(実測: `CLAUDE_CONFIG_DIR=/tmp/acprobe/cfg` のとき
+`/tmp/acprobe/cfg/session-env/.../sessionstart-hook-0.sh`、未設定なら
+`/tmp/fakehome/.claude/session-env/...`)。検出は `SessionStart` で走るので、
+ちょうど手に入る場所にある。
+
+したがって **`CLAUDE_ENV_FILE` 由来 > `CLAUDE_CONFIG_DIR` > `$HOME/.claude`** の順に解決する。
+`CLAUDE_ENV_FILE` は `Stop` hook には渡らない (実測) が、検出は `SessionStart` で
+一度きりなので問題にならない。
 
 ### 発火トークン数 = window − 33,000
 
