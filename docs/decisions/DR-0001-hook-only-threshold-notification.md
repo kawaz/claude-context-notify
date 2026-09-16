@@ -86,8 +86,7 @@ model 名から取れるのは `SessionStart` / `PostModelSwitch` の model 欄�
 5. 200,000 (既定)
 
 測定側 (`window_for()`) も同じ順序で解決する。3 はファイル 1 本の read、4 は env の
-read だけなので、event ごとに走っても `ps` を伴う auto compact 検出のようなコストは
-発生しない。
+read だけなので、event ごとに走らせても問題にならない。
 
 ### 5. latch は band を 1 個だけ持ち、上がった時だけ喋る
 

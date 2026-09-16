@@ -53,19 +53,16 @@ $ARGUMENTS
   "urgent_from": 90,
   "bands": [
     { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
-    { "before_autocompact": 5, "message": "auto compact ({ac_pct}%) まであと 5 ポイント。" }
+    { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
 
-- `profile` — `auto` (既定、auto compact の検出結果で帯を選ぶ) / `autocompact-on` /
+- `profile` — `auto` (既定、auto compact が有効かどうかで帯を選ぶ) / `autocompact-on` /
   `autocompact-off`。`bands` があれば profile は使われない
 - `bands[].at` — 閾値 (%)。1〜100 の整数、昇順、重複なし。個数は自由
-- `bands[].before_autocompact` — `at` の代わりに「auto compact 発火の N ポイント手前」に
-  置く (0〜50)。発火トークン数が不明なセッションではその帯は無視される
 - `bands[].message` — 跨いだ時にセッションへ注入する文面
 - `urgent_from` — この帯以上は `Stop` から即時に通知する (継続ターンが 1 本増える)。
   それ未満の帯は次のターンに相乗りする
 - 文面で使えるプレースホルダは `{pct}` (使用率) / `{used}` (使用トークン数) /
-  `{window}` (window の大きさ) / `{ac_pct}` (auto compact の発火率) /
-  `{ac_tokens}` (同トークン数) の 5 つだけ
+  `{window}` (window の大きさ) の 3 つだけ

@@ -194,96 +194,62 @@ fi
 # --- autocompact detection ----------------------------------------------------
 detect() { python3 -c "
 import json, sys
-sys.path.insert(0, '$root/bin')
-sys.argv = ['x']
 import importlib.util
 spec = importlib.util.spec_from_file_location('ctx', '$root/bin/ctx-notify.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print(json.dumps(m.detect_autocompact('${1:-}' or None)))
+print(json.dumps(m.detect_autocompact()))
 "; }
 
-out="$(detect)"
-check "検出: 何も無ければ閾値なし (reactive)" '"window": null' "$out"
-check "検出: 既定では有効" '"enabled": true' "$out"
+check "検出: 既定では有効" '"enabled": true' "$(detect)"
 
 out="$(DISABLE_AUTO_COMPACT=1 detect)"
 check "検出: DISABLE_AUTO_COMPACT で無効" '"enabled": false' "$out"
 check "検出: 無効の理由を持つ" 'DISABLE_AUTO_COMPACT env' "$out"
 
+out="$(DISABLE_COMPACT=1 detect)"
+check "検出: DISABLE_COMPACT で無効" '"enabled": false' "$out"
+
 printf '{"autoCompactEnabled": false}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 check "検出: .claude.json の autoCompactEnabled=false で無効" '"enabled": false' "$(detect)"
 printf '{}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 
-out="$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=120000 detect)"
-check "検出: env の window を読む" '"window": 120000' "$out"
-check "検出: 閾値は window - 33k" '"threshold": 87000' "$out"
-
-printf '{"autoCompactWindow": 110000}' > "$CLAUDE_CONFIG_DIR/settings.json"
-check "検出: user settings の autoCompactWindow を読む" '"window": 110000' "$(detect)"
-printf '{"autoCompactWindow": 105000}' > "$CLAUDE_CONFIG_DIR/settings.local.json"
-check "検出: user の settings.local.json が settings.json に勝つ" '"window": 105000' "$(detect)"
-rm "$CLAUDE_CONFIG_DIR/settings.local.json"
-
 # CLAUDE_CONFIG_DIR does not reach hooks unless the user exported it; the config
 # dir has to come out of CLAUDE_ENV_FILE in that case.
 mkdir -p "$tmp/viaenvfile"
-printf '{"autoCompactWindow": 101000}' > "$tmp/viaenvfile/settings.json"
-check "検出: CLAUDE_ENV_FILE から config dir を割り出す" '"window": 101000' \
+printf '{"autoCompactEnabled": false}' > "$tmp/viaenvfile/.claude.json"
+check "検出: CLAUDE_ENV_FILE から config dir を割り出す" '"enabled": false' \
   "$(unset CLAUDE_CONFIG_DIR
      CLAUDE_ENV_FILE="$tmp/viaenvfile/session-env/abc/sessionstart-hook-0.sh" detect)"
-check "検出: CLAUDE_ENV_FILE が CLAUDE_CONFIG_DIR に優先する" '"window": 101000' \
+check "検出: CLAUDE_ENV_FILE が CLAUDE_CONFIG_DIR に優先する" '"enabled": false' \
   "$(CLAUDE_ENV_FILE="$tmp/viaenvfile/session-env/abc/sessionstart-hook-0.sh" detect)"
 mkdir -p "$tmp/fakehome/.claude"
-printf '{"autoCompactWindow": 102000}' > "$tmp/fakehome/.claude/settings.json"
-check "検出: どちらも無ければ HOME/.claude を見る" '"window": 102000' \
+printf '{"autoCompactEnabled": false}' > "$tmp/fakehome/.claude/.claude.json"
+check "検出: どちらも無ければ HOME/.claude を見る" '"enabled": false' \
   "$(unset CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE; HOME="$tmp/fakehome" detect)"
-check "検出: env が settings に勝つ" '"window": 120000' \
-  "$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=120000 detect)"
-
-mkdir -p "$tmp/proj/.claude"
-printf '{"autoCompactWindow": 90000}' > "$tmp/proj/.claude/settings.json"
-check "検出: project settings が user settings に勝つ" '"window": 90000' "$(detect "$tmp/proj")"
-printf '{"autoCompactWindow": 80000}' > "$tmp/proj/.claude/settings.local.json"
-check "検出: local settings が project settings に勝つ" '"window": 80000' "$(detect "$tmp/proj")"
-rm "$CLAUDE_CONFIG_DIR/settings.json"
 
 # --- profile selection ---------------------------------------------------------
 new_session
 transcript_with 33000
 printf '{"profile":"auto"}' > "$tmp/auto.json"
+printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
+  | DISABLE_AUTO_COMPACT=1 python3 "$script" model
 out="$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
-check "profile auto: 閾値が無ければ通知はする" "66% (33,000 / 50,000 tokens)" "$out"
+check "profile auto: 無効なら通知はする" "66% (33,000 / 50,000 tokens)" "$out"
 if [[ "$out" == *"auto compact"* ]]; then
-  echo "NG: profile auto: 閾値が無ければ off 側 (auto compact に触れない) を選ぶ"
+  echo "NG: profile auto: 無効なら off 側 (auto compact に触れない) を選ぶ"
   fails=$((fails + 1))
 else
-  echo "ok: profile auto: 閾値が無ければ off 側 (auto compact に触れない) を選ぶ"
+  echo "ok: profile auto: 無効なら off 側 (auto compact に触れない) を選ぶ"
 fi
+check "state に検出結果が入る" '"enabled": false' "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
 
 new_session
 printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
-  | CLAUDE_CODE_AUTO_COMPACT_WINDOW=45000 python3 "$script" model
+  | python3 "$script" model
 transcript_with 12000  # 24% of 50,000
-check "profile auto: 閾値を検出したら on 側の文面" "auto compact" \
+# Japanese comes back \u-escaped in the JSON, so assert on the ASCII part.
+check "profile auto: 有効なら on 側の文面" "auto compact" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
-check "state に検出結果が入る" '"threshold": 12000' "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
-
-# --- before_autocompact bands --------------------------------------------------
-new_session
-cat > "$tmp/rel.json" <<'JSON'
-{"urgent_from": 99, "bands": [{"before_autocompact": 5, "message": "REL {pct}% ac={ac_pct}% tok={ac_tokens}"}]}
-JSON
-# window 50,000 with auto-compact at 40,000 tokens -> fires at 80%, band at 75%
-printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
-  | CLAUDE_CODE_AUTO_COMPACT_WINDOW=73000 python3 "$script" model
-transcript_with 38000  # 76% of 50,000
-check "before_autocompact: 発火の 5pt 手前で喋る" "REL 76% ac=80% tok=40,000" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/rel.json run deliver PostToolUse)"
-
-new_session
-transcript_with 38000
-check "before_autocompact: 閾値不明なら帯ごと落とす" SILENT \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/rel.json run deliver PostToolUse)"
 
 # --- PreCompact ----------------------------------------------------------------
 new_session
@@ -301,12 +267,8 @@ printf '{"profile":"nope"}' > "$tmp/badprofile.json"
 check "check: 未知の profile を指摘" "profile は auto" "$(check_role "$tmp/badprofile.json")"
 printf '{"profile":"auto"}' > "$tmp/onlyprofile.json"
 check "check: bands 無しの profile 指定は妥当" "設定は妥当です" "$(check_role "$tmp/onlyprofile.json")"
-cat > "$tmp/badrel.json" <<'JSON'
-{"bands": [{"at": 50, "before_autocompact": 5, "message": "x"}, {"before_autocompact": 90, "message": "y"}]}
-JSON
-out="$(check_role "$tmp/badrel.json")"
-check "check: at と before_autocompact の併記を指摘" "同時に書けません" "$out"
-check "check: before_autocompact の範囲外を指摘" "0〜50 の整数" "$out"
+printf '{"bands": [{"message": "x"}]}' > "$tmp/noat.json"
+check "check: at 欠落を指摘" "at は 1〜100 の整数" "$(check_role "$tmp/noat.json")"
 
 echo
 if ((fails)); then

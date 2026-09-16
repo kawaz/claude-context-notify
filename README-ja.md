@@ -55,25 +55,26 @@ command は 2 本ある。設定ファイルはどちらも plugin data dir に�
 `setup` は書き換えたあとに `ctx-notify.py check` を回し、JSON の妥当性・閾値
 (1〜100 の整数、昇順、重複なし)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
-### auto compact を検出して帯を切り替える
+### auto compact の有効 / 無効でテンプレを切り替える
 
-auto compact が閾値で走るセッションでは、95% や 97% の帯は撃たれる前に compact が起きて
-意味を失う。そこで plugin は起動時に auto compact の設定を調べ、帯を選び分ける。
+auto compact が有効なセッションでは、高い帯の文面は「compact される前提で引き継ぎを
+書き出せ」であるべきで、無効なセッションでは compact 前提の文面が誤解を招く。そこで
+plugin は起動時に auto compact が有効かどうかだけを調べ、帯のテンプレを選び分ける。
 
 | 検出結果 | 使う profile |
 |---|---|
-| 有効で、発火トークン数が確定している | `autocompact-on` (発火の手前で畳むよう促す) |
-| 有効だが閾値が定まらない (既定の `auto`) | `autocompact-off` |
-| 無効 (`DISABLE_AUTO_COMPACT` / `autoCompactEnabled: false`) | `autocompact-off` |
+| 有効 | `autocompact-on` (compact される前提の文面) |
+| 無効 (`DISABLE_AUTO_COMPACT` / `DISABLE_COMPACT` / `autoCompactEnabled: false`) | `autocompact-off` |
 
 設定の `profile` に `autocompact-on` / `autocompact-off` を書けば固定できる。
 自分で `bands` を書いた場合は profile より優先される。
 
-発火トークン数は `CLAUDE_CODE_AUTO_COMPACT_WINDOW` env → `--autocompact <tokens>` →
-`autoCompactWindow` 設定 (managed → project → user) の順に探し、見つかった window から
-33,000 を引いた値 (実測した buffer)。設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
-(`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。検出の詳細と根拠は
-[DR-0002](./docs/decisions/DR-0002-autocompact-detection-and-profiles.md)。
+**auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window
+設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `at` にその % を書く。
+有効 / 無効の判定材料は `$CLAUDE_CONFIG_DIR/.claude.json` の `autoCompactEnabled` と
+上記 env の 2 つだけ。設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
+(`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。判断の根拠は
+[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md)。
 
 auto compact が走ると `PreCompact` hook が latch を戻し、新しい context の最初のターンで
 「要約に置き換わった」ことを 1 度だけ知らせる。
@@ -86,8 +87,7 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
   "urgent_from": 90,
   "bands": [
     { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
-    { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" },
-    { "before_autocompact": 5, "message": "auto compact ({ac_pct}%) まであと 5 ポイント。" }
+    { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
@@ -95,11 +95,8 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
 - `profile` — `auto` (既定、検出結果で選ぶ) / `autocompact-on` / `autocompact-off`。
   `bands` を書けばそちらが優先される
 - `bands[].at` — 閾値 (%)。個数も順序も自由
-- `bands[].before_autocompact` — `at` の代わりに「auto compact 発火の N ポイント手前」で
-  置く。発火トークン数が分からないセッションではこの帯は無視される
 - `bands[].message` — 注入する文面。`{pct}` (使用率) / `{used}` (使用トークン数) /
-  `{window}` (window の大きさ) / `{ac_pct}` (auto compact の発火率) /
-  `{ac_tokens}` (同トークン数) が展開される。綴りを間違えたプレースホルダは、
+  `{window}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
   セッションを壊さないようそのまま文字として残る
 - `urgent_from` — この帯以上は `Stop` から即時に喋る (継続ターンが 1 本増える)。
   それ未満の帯は「どうせ起きる次のターン」に相乗りする
@@ -125,7 +122,7 @@ window は次の順で、最初に答えが出たものを使う。
 
 | hook | 役割 | 何をするか |
 |---|---|---|
-| `SessionStart`, `PostModelSwitch` | `model` | window を記録し、auto compact の設定を検出する。model 名を `[1m]` 付きで持つのはこの 2 event だけ |
+| `SessionStart`, `PostModelSwitch` | `model` | window を記録し、auto compact が有効かどうかを調べる。model 名を `[1m]` 付きで持つのはこの 2 event だけ |
 | `Stop` | `measure` | 使用量を測り、latch を動かし、文面を積む。`urgent_from` 以上の時だけ喋る |
 | `PostToolUse`, `UserPromptSubmit` | `deliver` | 同じく測ったうえで、積まれた文面を配る |
 | `PreCompact` (matcher `auto`) | `precompact` | latch を 0 に戻し、compact 後の最初のターンに知らせる文面を積む |
@@ -141,7 +138,7 @@ latch は `$XDG_STATE_HOME/claude-context-notify/<session_id>.json` に band を
 
 設計判断の記録:
 [DR-0001](./docs/decisions/DR-0001-hook-only-threshold-notification.md) (hook だけで組み立てる)、
-[DR-0002](./docs/decisions/DR-0002-autocompact-detection-and-profiles.md) (auto compact の検出と profile)。
+[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md) (auto compact の有無と profile)。
 
 ## ライセンス
 
