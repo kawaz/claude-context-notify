@@ -91,8 +91,8 @@ the first turn of the new context.
   "profile": "auto",
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "context {pct}% used ({used} / {window} tokens)." },
-    { "at": 90, "message": "context {pct}% used. Wrap up and write the handoff." }
+    { "at": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
+    { "at": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
   ]
 }
 ```
@@ -100,8 +100,10 @@ the first turn of the new context.
 - `profile` — `auto` (default, chosen by detection), `autocompact-on`, or `autocompact-off`.
   Ignored when `bands` is present.
 - `bands[].at` — the threshold, in percent. Any number of bands, in any order.
-- `bands[].message` — what the session is told. `{pct}` (usage percent), `{used}` (tokens used)
-  and `{window}` (window size) are substituted. A misspelled placeholder is left as literal text rather than breaking the session.
+- `bands[].message` — what the session is told. `{used_tokens}` (tokens used),
+  `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
+  `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted.
+  A misspelled placeholder is left as literal text rather than breaking the session.
 - `urgent_from` — bands at or above this speak immediately from `Stop`, costing one extra
   continuation turn. Milder bands wait for a turn that was going to happen anyway.
 

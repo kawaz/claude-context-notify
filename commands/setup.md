@@ -52,8 +52,8 @@ $ARGUMENTS
   "profile": "auto",
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
-    { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" }
+    { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
@@ -64,5 +64,6 @@ $ARGUMENTS
 - `bands[].message` — 跨いだ時にセッションへ注入する文面
 - `urgent_from` — この帯以上は `Stop` から即時に通知する (継続ターンが 1 本増える)。
   それ未満の帯は次のターンに相乗りする
-- 文面で使えるプレースホルダは `{pct}` (使用率) / `{used}` (使用トークン数) /
-  `{window}` (window の大きさ) の 3 つだけ
+- 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}`
+  (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
+  `{window_tokens}` (window の大きさ) の 5 つだけ

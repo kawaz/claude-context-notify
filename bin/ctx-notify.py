@@ -111,7 +111,16 @@ def load_config(path=None, info=None):
     return entries, (int(urgent) if isinstance(urgent, int) else 90), (chosen, why)
 
 
-PLACEHOLDERS = ("pct", "used", "window")
+PLACEHOLDERS = (
+    "used_tokens",
+    "used_percent",
+    "available_tokens",
+    "available_percent",
+    "window_tokens",
+)
+
+# Old spellings, so `check` can point at the name that replaced them.
+RENAMED = {"pct": "used_percent", "used": "used_tokens", "window": "window_tokens"}
 
 
 def config_dir():
@@ -157,8 +166,18 @@ class _Lenient(dict):
 
 
 def render(template, pct, used, window):
-    """Fill a band message. A typo in the config must not break the session."""
-    values = _Lenient(pct=pct, used=f"{used:,}", window=f"{window:,}")
+    """Fill a band message. A typo in the config must not break the session.
+
+    `available_percent` is derived from the rounded `used_percent` so the two
+    always add up to 100 in the same sentence.
+    """
+    values = _Lenient(
+        used_tokens=f"{used:,}",
+        used_percent=pct,
+        available_tokens=f"{window - used:,}",
+        available_percent=100 - pct,
+        window_tokens=f"{window:,}",
+    )
     try:
         return template.format_map(values)
     except (IndexError, ValueError):
@@ -210,7 +229,13 @@ def check_config(path):
             problems.append(f"{where}.message は空でない文字列にしてください")
             continue
         for name in _placeholder_names(msg):
-            if name not in PLACEHOLDERS:
+            if name in PLACEHOLDERS:
+                continue
+            if name in RENAMED:
+                problems.append(
+                    f"{where}.message: {{{name}}} は {{{RENAMED[name]}}} に改名されました"
+                )
+            else:
                 problems.append(
                     f"{where}.message: 未知のプレースホルダ {{{name}}} "
                     f"(使えるのは {', '.join('{%s}' % p for p in PLACEHOLDERS)})"
@@ -490,7 +515,11 @@ def show_config(data_dir, session_id=None):
         print(f"  {label}  {entry.get('message', '')}")
     print(f"\n(帯は window {window:,} tokens = {window_from}の値 を基準に表示しています)")
     print("このファイルを編集すると閾値と文面を変えられます。")
-    print("プレースホルダ: {pct} 使用率 / {used} 使用トークン / {window} window")
+    print(
+        "プレースホルダ: {used_tokens} 使用トークン / {used_percent} 使用率 / "
+        "{available_tokens} 残りトークン / {available_percent} 残り % / "
+        "{window_tokens} window"
+    )
     report_problems(check_config(path))
 
 

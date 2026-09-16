@@ -86,8 +86,8 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
   "profile": "auto",
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)" },
-    { "at": 90, "message": "ctx {pct}%。新しい作業に着手せず引き継ぎを始めてください。" }
+    { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
@@ -95,8 +95,9 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
 - `profile` — `auto` (既定、検出結果で選ぶ) / `autocompact-on` / `autocompact-off`。
   `bands` を書けばそちらが優先される
 - `bands[].at` — 閾値 (%)。個数も順序も自由
-- `bands[].message` — 注入する文面。`{pct}` (使用率) / `{used}` (使用トークン数) /
-  `{window}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
+- `bands[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
+  (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
+  `{window_tokens}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
   セッションを壊さないようそのまま文字として残る
 - `urgent_from` — この帯以上は `Stop` から即時に喋る (継続ターンが 1 本増える)。
   それ未満の帯は「どうせ起きる次のターン」に相乗りする

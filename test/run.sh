@@ -14,10 +14,21 @@ trap 'rm -rf "$tmp"' EXIT
 export XDG_STATE_HOME="$tmp/state"
 export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 unset CLAUDE_PLUGIN_DATA || true
-# Most cases assert against the no-autocompact wording, so point the config at
-# that profile explicitly instead of letting detection pick.
-printf '{"profile":"autocompact-off"}' > "$tmp/off.json"
-export CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/off.json"
+# Bands live in a fixture rather than in a shipped profile: the wording of
+# templates/*.json is the user's to change, and latch behaviour must not be
+# asserted through it.
+cat > "$tmp/bands.json" <<'JSON'
+{"urgent_from": 90, "bands": [
+  {"at": 20, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 40, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 60, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 80, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 90, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 95, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 97, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"}
+]}
+JSON
+export CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/bands.json"
 # Detection must not see the developer's own environment.
 export CLAUDE_CONFIG_DIR="$tmp/cfgdir"
 mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -145,32 +156,61 @@ export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 new_session
 transcript_with 33000
 cat > "$tmp/custom.json" <<'JSON'
-{"urgent_from": 50, "bands": [{"at": 50, "message": "CUSTOM {pct}%"}]}
+{"urgent_from": 50, "bands": [{"at": 50, "message": "CUSTOM {used_percent}%"}]}
 JSON
 check "設定の閾値と文面が使われる" "CUSTOM 66%" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/custom.json run deliver PostToolUse)"
+
+# --- the remaining-room placeholders complement the used ones ------------------
+new_session
+transcript_with 33000
+cat > "$tmp/available.json" <<'JSON'
+{"urgent_from": 90, "bands": [{"at": 50, "message": "LEFT {available_tokens} tokens / {available_percent}% of {window_tokens}"}]}
+JSON
+check "available_tokens / available_percent が展開される" \
+  "LEFT 17,000 tokens / 34% of 50,000" \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/available.json run deliver PostToolUse)"
 
 # --- /context-notify:config bootstraps the file --------------------------------
 cfgdir="$tmp/plugindata"
 out="$(CLAUDE_CONTEXT_NOTIFY_CONFIG= python3 "$script" config "$cfgdir")"
 check "config: 初回はテンプレから作成する" "テンプレから作成" "$out"
-check "config: 作成したファイルを読んで閾値を並べる" "97%" "$out"
+# Asserted on the structure it prints, not on the shipped wording, which is the
+# user's to edit.
+check "config: 作成したファイルを読んで profile を決める" "profile: autocompact-" "$out"
+check "config: 閾値の下限を示す" "urgent_from:" "$out"
+check "config: 使えるプレースホルダを並べる" "{available_percent}" "$out"
 [[ -f "$cfgdir/config.json" ]] || { echo "NG: config file not created"; fails=$((fails + 1)); }
 
 # --- a typo in a placeholder must not break the session -----------------------
 new_session
 transcript_with 33000
 cat > "$tmp/typo.json" <<'JSON'
-{"urgent_from": 90, "bands": [{"at": 50, "message": "TYPO {pcnt}% {pct}%"}]}
+{"urgent_from": 90, "bands": [{"at": 50, "message": "TYPO {pcnt}% {used_percent}%"}]}
 JSON
 check "未知のプレースホルダはそのまま残して喋る" "TYPO {pcnt}% 66%" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run deliver PostToolUse)"
 
+# A config still written in the old names must degrade to literal text, never
+# to an exception that breaks every turn of the session.
+new_session
+transcript_with 33000
+cat > "$tmp/oldnames.json" <<'JSON'
+{"urgent_from": 90, "bands": [{"at": 50, "message": "OLD {pct}% {used} {window}"}]}
+JSON
+check "旧名の config でも hook は落ちず文面がそのまま出る" "OLD {pct}% {used} {window}" \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/oldnames.json run deliver PostToolUse)"
+
 # --- check role: validation for /context-notify:setup --------------------------
 check_role() { CLAUDE_CONTEXT_NOTIFY_CONFIG="$1" python3 "$script" check 2>&1 || true; }
 
-check "check: 既定テンプレは妥当" "設定は妥当です" "$(check_role "$root/templates/config.json")"
+check "check: 新名だけの bands は妥当" "設定は妥当です" "$(check_role "$tmp/bands.json")"
 check "check: 未知のプレースホルダを指摘" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo.json")"
+
+old_out="$(check_role "$tmp/oldnames.json")"
+check "check: {pct} の改名先を案内" "{pct} は {used_percent} に改名されました" "$old_out"
+check "check: {used} の改名先を案内" "{used} は {used_tokens} に改名されました" "$old_out"
+check "check: {window} の改名先を案内" "{window} は {window_tokens} に改名されました" "$old_out"
 
 cat > "$tmp/bad.json" <<'JSON'
 {"urgent_from": 900, "bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
@@ -228,28 +268,22 @@ check "検出: どちらも無ければ HOME/.claude を見る" '"enabled": fals
   "$(unset CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE; HOME="$tmp/fakehome" detect)"
 
 # --- profile selection ---------------------------------------------------------
+# Which profile `auto` lands on is asserted through the name the config role
+# prints, so the shipped wording stays the user's to change.
 new_session
 transcript_with 33000
 printf '{"profile":"auto"}' > "$tmp/auto.json"
 printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
   | DISABLE_AUTO_COMPACT=1 python3 "$script" model
-out="$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
-check "profile auto: 無効なら通知はする" "66% (33,000 / 50,000 tokens)" "$out"
-if [[ "$out" == *"auto compact"* ]]; then
-  echo "NG: profile auto: 無効なら off 側 (auto compact に触れない) を選ぶ"
-  fails=$((fails + 1))
-else
-  echo "ok: profile auto: 無効なら off 側 (auto compact に触れない) を選ぶ"
-fi
+check "profile auto: bands 無しでも profile の帯で通知する" '"additionalContext"' \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
+check "profile auto: 無効なら off 側を選ぶ" "profile: autocompact-off" \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json DISABLE_AUTO_COMPACT=1 \
+     python3 "$script" config)"
 check "state に検出結果が入る" '"enabled": false' "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
 
-new_session
-printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
-  | python3 "$script" model
-transcript_with 12000  # 24% of 50,000
-# Japanese comes back \u-escaped in the JSON, so assert on the ASCII part.
-check "profile auto: 有効なら on 側の文面" "auto compact" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
+check "profile auto: 有効なら on 側を選ぶ" "profile: autocompact-on" \
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json python3 "$script" config)"
 
 # --- PreCompact ----------------------------------------------------------------
 new_session
