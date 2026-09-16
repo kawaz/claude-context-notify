@@ -4,7 +4,6 @@ active な issue の一覧。close 済みは archive/ にあり、ここには�
 
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
-| 2026-09-16 | bug | open | [clear-session-start-lacks-model](./2026-09-16-clear-session-start-lacks-model.md) | /clear 起点のセッションで使用率が実際の5倍 (200k換算) で通知される |
 
 <!--
 INDEX の列構成・canonical 順序・行形式の唯一の正本:

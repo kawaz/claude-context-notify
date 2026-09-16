@@ -1,6 +1,6 @@
 ---
 title: /clear 起点のセッションで使用率が実際の5倍 (200k換算) で通知される
-status: open
+status: resolved
 category: bug
 created: 2026-09-16T09:29:10+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-09-16T09:37:40+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:修正済み。commit 571d8cf で window 解決を CLAUDE_CONTEXT_WINDOW_TOKENS → model 名の [1m] → CLAUDE_PID 単位の記録 → CLAUDE_CODE_MAX_CONTEXT_TOKENS → 200k のチェーンに集約。test/run.sh に model 無し 3 ケース追加、DR-0001 §4 と README 両言語を更新。"]
 blocked_by:
 origin: 自リポ TODO
 ---
