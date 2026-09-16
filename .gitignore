@@ -1,1 +1,3 @@
 __pycache__/
+# 各自の VS Code workspace ファイル (<name>.local.code-workspace、ローカルパス入りなので commit しない)
+*.local.*
