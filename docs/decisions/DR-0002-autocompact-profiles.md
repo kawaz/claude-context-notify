@@ -18,12 +18,24 @@ compact 前提の文面が誤解を招く。どちらの前提で動いている
 
 | 経路 | 読み方 | 実測 |
 |---|---|---|
-| `autoCompactEnabled` | `$CLAUDE_CONFIG_DIR/.claude.json` の真偽値。既定 `true` | `false` にすると `/context` から "Autocompact buffer" 行が消える |
-| `DISABLE_AUTO_COMPACT` env | 値があれば無効 | 同上。hook の env にそのまま現れる |
+| `DISABLE_AUTO_COMPACT` env | 値があれば無効 | `/context` から "Autocompact buffer" 行が消える。hook の env にそのまま現れる |
 | `DISABLE_COMPACT` env | 値があれば無効 (手動 `/compact` も無効になる) | バイナリの記述。env 経路は上と同じ |
+| `autoCompactEnabled` | settings ファイル群 → `.claude.json` の真偽値。既定 `true` | `/config` の Auto-compact トグルは `$CLAUDE_CONFIG_DIR/settings.json` の値を表示する (v2.1.272) |
 
-`autoCompactEnabled` は **settings.json ではなくグローバル設定 `.claude.json`** に載る
-(バイナリ内の既定値テーブルに `autoCompactEnabled:!0` があり、実ファイルでも同じ場所)。
+`autoCompactEnabled` は **settings ファイルに載る**。読む順は Claude Code の settings
+優先順そのままで、先に真偽値を持っていたファイルが勝つ:
+
+1. プロジェクトの `.claude/settings.local.json`
+2. プロジェクトの `.claude/settings.json`
+3. ユーザの `$CLAUDE_CONFIG_DIR/settings.local.json`
+4. ユーザの `$CLAUDE_CONFIG_DIR/settings.json`
+5. グローバル設定 `$CLAUDE_CONFIG_DIR/.claude.json` (fallback。バイナリの既定値テーブルに
+   `autoCompactEnabled:!0` があり、このファイルにもキーが現れる。ただし `/config` で
+   トグルしても `null` のままの環境がある)
+
+どこにも真偽値が無ければ既定の有効。env 2 本は settings より上に置く。
+`reason` にはどのファイル由来かを載せる (例 `autoCompactEnabled: false (settings.json)`)。
+プロジェクト側を見るために hook payload の `cwd` を検出に渡す。
 
 ### config dir の在り処
 
@@ -47,7 +59,7 @@ compact 前提の文面が誤解を招く。どちらの前提で動いている
 ### 1. 検出は `SessionStart` / `PostModelSwitch` で一度だけ行い state に持つ
 
 window を記録する `model` 役に相乗りさせ、`autocompact: {enabled, reason}` として
-state に置く。読むのは JSON ファイル 1 個と env 2 本だけで、プロセス走査は行わない。
+state に置く。読むのは JSON ファイル数個と env 2 本だけで、プロセス走査は行わない。
 
 ### 2. profile で帯を切り替える
 

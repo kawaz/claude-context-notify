@@ -226,13 +226,16 @@ else
 fi
 
 # --- autocompact detection ----------------------------------------------------
+# The project side of the lookup is the hook payload's cwd, so cases pass one
+# explicitly; the default is an empty directory, not the developer's own repo.
+mkdir -p "$tmp/nocwd"
 detect() { python3 -c "
 import json, sys
 import importlib.util
 spec = importlib.util.spec_from_file_location('ctx', '$root/bin/ctx-notify.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print(json.dumps(m.detect_autocompact()))
-"; }
+print(json.dumps(m.detect_autocompact(sys.argv[1])))
+" "${1-$tmp/nocwd}"; }
 
 check "検出: 既定では有効" '"enabled": true' "$(detect)"
 
@@ -243,8 +246,27 @@ check "検出: 無効の理由を持つ" 'DISABLE_AUTO_COMPACT env' "$out"
 out="$(DISABLE_COMPACT=1 detect)"
 check "検出: DISABLE_COMPACT で無効" '"enabled": false' "$out"
 
+printf '{"autoCompactEnabled": false}' > "$CLAUDE_CONFIG_DIR/settings.json"
+out="$(detect)"
+check "検出: settings.json の autoCompactEnabled=false で無効" '"enabled": false' "$out"
+check "検出: settings.json 由来だと分かる" 'autoCompactEnabled: false (settings.json)' "$out"
+rm "$CLAUDE_CONFIG_DIR/settings.json"
+
 printf '{"autoCompactEnabled": false}' > "$CLAUDE_CONFIG_DIR/.claude.json"
-check "検出: .claude.json の autoCompactEnabled=false で無効" '"enabled": false' "$(detect)"
+out="$(detect)"
+check "検出: settings が無ければ .claude.json の false で無効" '"enabled": false' "$out"
+check "検出: .claude.json 由来だと分かる" 'autoCompactEnabled: false (.claude.json)' "$out"
+
+printf '{"autoCompactEnabled": true}' > "$CLAUDE_CONFIG_DIR/settings.json"
+check "検出: settings.json の true が .claude.json の false に勝つ" '"enabled": true' "$(detect)"
+
+mkdir -p "$tmp/proj/.claude"
+printf '{"autoCompactEnabled": false}' > "$tmp/proj/.claude/settings.json"
+out="$(detect "$tmp/proj")"
+check "検出: プロジェクトの settings.json がユーザ設定に勝つ" '"enabled": false' "$out"
+check "検出: プロジェクト由来だと分かる" 'autoCompactEnabled: false (.claude/settings.json)' "$out"
+rm -r "$tmp/proj"
+rm "$CLAUDE_CONFIG_DIR/settings.json"
 printf '{}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 
 # CLAUDE_CONFIG_DIR does not reach hooks unless the user exported it; the config

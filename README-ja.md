@@ -71,8 +71,10 @@ plugin は起動時に auto compact が有効かどうかだけを調べ、帯�
 
 **auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window
 設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `at` にその % を書く。
-有効 / 無効の判定材料は `$CLAUDE_CONFIG_DIR/.claude.json` の `autoCompactEnabled` と
-上記 env の 2 つだけ。設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
+有効 / 無効の判定材料は上記 env の 2 つと `autoCompactEnabled` だけ。後者は Claude Code の
+settings 優先順で探す (プロジェクトの `.claude/settings.local.json` → `.claude/settings.json`
+→ ユーザの `settings.local.json` → `settings.json`、最後の手段として `.claude.json`)。
+設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
 (`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。判断の根拠は
 [DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md)。
 

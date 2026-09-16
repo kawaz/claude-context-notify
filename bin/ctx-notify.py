@@ -126,23 +126,41 @@ def config_dir():
     return pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"))
 
 
-def detect_autocompact():
+def autocompact_sources(cwd=None):
+    """Where `autoCompactEnabled` may sit, highest precedence first.
+
+    The settings files come in Claude Code's own order (project before user,
+    `.local` before shared); the global `.claude.json` is the last resort.
+    """
+    project = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
+    cfg = config_dir()
+    return [
+        (project / ".claude" / "settings.local.json", ".claude/settings.local.json"),
+        (project / ".claude" / "settings.json", ".claude/settings.json"),
+        (cfg / "settings.local.json", "settings.local.json"),
+        (cfg / "settings.json", "settings.json"),
+        (cfg / ".claude.json", ".claude.json"),
+    ]
+
+
+def detect_autocompact(cwd=None):
     """Whether auto-compact will fire at all.
 
     Only the on/off question is asked: where it fires depends on Claude Code's
     own window setting, and placing bands against it is the user's job. See
     docs/decisions/DR-0002.
     """
-    enabled, why = True, "default"
-
-    global_config = load_json(config_dir() / ".claude.json") or {}
-    if global_config.get("autoCompactEnabled") is False:
-        enabled, why = False, "autoCompactEnabled: false"
     for var in ("DISABLE_AUTO_COMPACT", "DISABLE_COMPACT"):
         if os.environ.get(var):
-            enabled, why = False, f"{var} env"
+            return {"enabled": False, "reason": f"{var} env"}
 
-    return {"enabled": enabled, "reason": why}
+    for path, label in autocompact_sources(cwd):
+        value = (load_json(path) or {}).get("autoCompactEnabled")
+        if isinstance(value, bool):
+            why = f"autoCompactEnabled: {'true' if value else 'false'} ({label})"
+            return {"enabled": value, "reason": why}
+
+    return {"enabled": True, "reason": "default"}
 
 
 class _Lenient(dict):
@@ -369,7 +387,7 @@ def remember_window(ev):
     if name:
         st["window"] = window_of(name)
         remember_pid_window(st["window"])
-    st["autocompact"] = detect_autocompact()
+    st["autocompact"] = detect_autocompact(ev.get("cwd"))
     sp.write_text(json.dumps(st))
 
 

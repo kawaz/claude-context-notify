@@ -75,10 +75,12 @@ overrides the profile entirely.
 
 **The plugin does not work out where auto-compact fires.** That point is set by Claude Code's
 own window setting (`window - buffer`), so if you want a band just before it, put that percent
-in `at` yourself. The on/off answer comes from `autoCompactEnabled` in
-`$CLAUDE_CONFIG_DIR/.claude.json` and the two environment variables above; the config
-directory is located from `CLAUDE_ENV_FILE`, since `CLAUDE_CONFIG_DIR` only reaches hooks when
-you export it yourself. The reasoning is recorded in
+in `at` yourself. The on/off answer comes from the two environment variables above and from
+`autoCompactEnabled`, looked up in Claude Code's own settings order — the project's
+`.claude/settings.local.json` and `.claude/settings.json`, then your `settings.local.json` and
+`settings.json`, with `.claude.json` as a last resort. The config directory is located from
+`CLAUDE_ENV_FILE`, since `CLAUDE_CONFIG_DIR` only reaches hooks when you export it yourself.
+The reasoning is recorded in
 [DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md).
 
 When auto-compact does fire, usage drops and the latch silently rewinds with it, so the
