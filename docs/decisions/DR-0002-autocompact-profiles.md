@@ -61,20 +61,10 @@ state に置く。読むのは JSON ファイル 1 個と env 2 本だけで、�
 
 帯の位置 (`at`) は両 profile で同じ (20/40/60/80/90/95/97)。違うのは文面だけで、
 on 側は「発火点は Claude Code 側の設定で決まるので、その手前の % に `at` を置け」と
-最初の帯で案内し、高い帯では compact される前提の指示を出す。`urgent_from` は
-on 側 80 / off 側 90。
+最初の帯で案内し、高い帯では compact される前提の指示を出す。
 
 **設定に `bands` があればそれが最優先** (profile より上)。ユーザが自分で書いた帯を
 検出結果で上書きしない。
-
-### 3. `PreCompact` (matcher `auto`) で latch を戻し、compact 後に 1 度だけ知らせる
-
-compact の**最中**に喋っても、それを読むターンごと要約される。そこで PreCompact では
-state を巻き戻して通知を積むだけにし、**新しい context の最初のターン**で配る。
-
-積み先は `pending` (帯の通知) とは別の `notice` にする。PreCompact 直後の測定は
-まだ古い使用量を読むことがあり、同じ場所に積むと帯の通知に上書きされて消えるため
-(テストで再現させたうえで分離した)。
 
 ## Consequences
 
@@ -82,9 +72,6 @@ state を巻き戻して通知を積むだけにし、**新しい context の最
   発火点の手前で鳴らしたいユーザは自分で `at` を調整する
 - セッション中に `/autocompact` や設定変更で有効 / 無効が変わっても追従しない
   (通知 hook が無く、検出は `SessionStart` / `PostModelSwitch` の一度きり)
-- `PreCompact` の **auto matcher が実際に発火するところは未実測** (再現に ~87k
-  tokens 以上の消費が要る)。同じ hook を `manual` matcher で発火させ、stdin に
-  `trigger: "manual"` が来ることと配線の正しさは確認済み
 
 ## 関連
 

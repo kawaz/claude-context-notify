@@ -1,5 +1,4 @@
 {
-  "urgent_from": 90,
   "bands": [
     {
       "at": 20,
@@ -23,11 +22,11 @@
     },
     {
       "at": 95,
-      "message": "Context at {used_percent}%. If you are in the middle of something, let go of it soon and start preparing the handoff."
+      "message": "ctx {used_percent}%. If you are in the middle of something, let go of it soon and start preparing the handoff."
     },
     {
       "at": 97,
-      "message": "Context at {used_percent}%! Ask the user to run a compact right now!"
+      "message": "ctx {used_percent}%! Ask the user to run a /compact right now!"
     }
   ]
 }

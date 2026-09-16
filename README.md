@@ -81,15 +81,14 @@ directory is located from `CLAUDE_ENV_FILE`, since `CLAUDE_CONFIG_DIR` only reac
 you export it yourself. The reasoning is recorded in
 [DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md).
 
-When auto-compact does fire, the `PreCompact` hook rewinds the latch and leaves one notice for
-the first turn of the new context.
+When auto-compact does fire, usage drops and the latch silently rewinds with it, so the
+thresholds re-arm and the next crossing is announced as usual.
 
 ### Config format
 
 ```json
 {
   "profile": "auto",
-  "urgent_from": 90,
   "bands": [
     { "at": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
     { "at": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
@@ -104,8 +103,6 @@ the first turn of the new context.
   `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
   `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted.
   A misspelled placeholder is left as literal text rather than breaking the session.
-- `urgent_from` — bands at or above this speak immediately from `Stop`, costing one extra
-  continuation turn. Milder bands wait for a turn that was going to happen anyway.
 
 ### How the context window is resolved
 
@@ -129,14 +126,17 @@ and `claude -p` starts). So the window comes from the first of these that answer
 | Hook | Role | What it does |
 |---|---|---|
 | `SessionStart`, `PostModelSwitch` | `model` | Records the context window and whether auto-compact is enabled. Only these events spell the model with its `[1m]` suffix. |
-| `Stop` | `measure` | Reads usage, moves the latch, queues the message. Speaks only at `urgent_from` and above. |
-| `PostToolUse`, `UserPromptSubmit` | `deliver` | Also measures, then speaks whatever was queued. |
-| `PreCompact` (matcher `auto`) | `precompact` | Rewinds the latch and queues a notice for the first turn after the compaction. |
+| `Stop`, `PostToolUse` | `measure` | Reads usage, moves the latch, and speaks on the spot when the latch just moved up into a band. |
 
 Usage is the sum of `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` on
 the newest non-sidechain assistant line of the transcript — the prompt length of the last
-main-thread request. Measuring on all three events covers the transcript's asynchronous
-writes, which sometimes leave `Stop` reading a turn that isn't there yet.
+main-thread request. Measuring on both events covers the transcript's asynchronous writes,
+which sometimes leave `Stop` reading a turn that isn't there yet.
+
+Speaking from `Stop` wakes one continuation turn, but the prefix it reads is already in the
+prompt cache, so the crossing costs a cache read plus a few dozen written tokens. That is
+cheap enough that there is no reason to hold a message back for a turn that was going to
+happen anyway.
 
 The latch is a single band in `$XDG_STATE_HOME/claude-context-notify/<session_id>.json`.
 It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact`

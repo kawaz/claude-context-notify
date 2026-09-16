@@ -50,7 +50,6 @@ $ARGUMENTS
 ```json
 {
   "profile": "auto",
-  "urgent_from": 90,
   "bands": [
     { "at": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
     { "at": 90, "message": "Context at {used_percent}%, {available_tokens} tokens left. Do not start new work; begin the handoff." }
@@ -62,8 +61,6 @@ $ARGUMENTS
   `autocompact-off`。`bands` があれば profile は使われない
 - `bands[].at` — 閾値 (%)。1〜100 の整数、昇順、重複なし。個数は自由
 - `bands[].message` — 跨いだ時にセッションへ注入する文面
-- `urgent_from` — この帯以上は `Stop` から即時に通知する (継続ターンが 1 本増える)。
-  それ未満の帯は次のターンに相乗りする
 - 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
   `{window_tokens}` (window の大きさ) の 5 つだけ

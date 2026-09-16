@@ -76,15 +76,14 @@ plugin は起動時に auto compact が有効かどうかだけを調べ、帯�
 (`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。判断の根拠は
 [DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md)。
 
-auto compact が走ると `PreCompact` hook が latch を戻し、新しい context の最初のターンで
-「要約に置き換わった」ことを 1 度だけ知らせる。
+auto compact が走ると使用量が下がり、latch も黙って一緒に戻る。閾値が再武装されるので、
+次に帯を跨いだ時にいつもどおり通知される。
 
 ### 設定ファイルの形式
 
 ```json
 {
   "profile": "auto",
-  "urgent_from": 90,
   "bands": [
     { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
     { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
@@ -99,8 +98,6 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
   `{window_tokens}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
   セッションを壊さないようそのまま文字として残る
-- `urgent_from` — この帯以上は `Stop` から即時に喋る (継続ターンが 1 本増える)。
-  それ未満の帯は「どうせ起きる次のターン」に相乗りする
 
 ### window の決まり方
 
@@ -124,14 +121,16 @@ window は次の順で、最初に答えが出たものを使う。
 | hook | 役割 | 何をするか |
 |---|---|---|
 | `SessionStart`, `PostModelSwitch` | `model` | window を記録し、auto compact が有効かどうかを調べる。model 名を `[1m]` 付きで持つのはこの 2 event だけ |
-| `Stop` | `measure` | 使用量を測り、latch を動かし、文面を積む。`urgent_from` 以上の時だけ喋る |
-| `PostToolUse`, `UserPromptSubmit` | `deliver` | 同じく測ったうえで、積まれた文面を配る |
-| `PreCompact` (matcher `auto`) | `precompact` | latch を 0 に戻し、compact 後の最初のターンに知らせる文面を積む |
+| `Stop`, `PostToolUse` | `measure` | 使用量を測り、latch を動かし、帯を上に跨いでいればその場で喋る |
 
 使用量は transcript の最新の非 sidechain assistant 行の
 `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` の和 = 直近の
-メインスレッドのリクエストで送った prompt 長。3 event すべてで測るのは、transcript の
+メインスレッドのリクエストで送った prompt 長。2 event で測るのは、transcript の
 書き込みが非同期で、`Stop` の時点ではそのターンの行がまだ無いことがあるため。
+
+`Stop` から喋ると継続ターンが 1 本起きるが、そこで読まれる prefix は既に prompt cache に
+載っているので、跨ぎ 1 回のコストは cache read と数十 token の write に収まる。
+この程度なら、どうせ起きるターンまで文面を持ち越す理由が無い。
 
 latch は `$XDG_STATE_HOME/claude-context-notify/<session_id>.json` に band を 1 個持つだけ。
 **上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が

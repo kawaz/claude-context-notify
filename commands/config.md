@@ -21,8 +21,7 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 
 出力には、auto compact が有効かどうかと、そこから選ばれた profile も含まれる。
 
-設定ファイルの形式は `profile` (`auto` / `autocompact-on` / `autocompact-off`)、
-`bands` (`at` = 閾値 %、`message` = 文面)、`urgent_from` (この帯以上は `Stop` から
-即時に通知する下限)。`bands` を書くと profile より優先される。
+設定ファイルの形式は `profile` (`auto` / `autocompact-on` / `autocompact-off`) と
+`bands` (`at` = 閾値 %、`message` = 文面)。`bands` を書くと profile より優先される。
 文面では `{used_tokens}` / `{used_percent}` / `{available_tokens}` /
 `{available_percent}` / `{window_tokens}` が使える。

@@ -20,17 +20,6 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "matcher": "auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py\" precompact #claude-context-notify"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -47,17 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py\" deliver #claude-context-notify"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py\" deliver #claude-context-notify"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py\" measure #claude-context-notify"
           }
         ]
       }

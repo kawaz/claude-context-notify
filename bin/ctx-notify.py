@@ -8,15 +8,11 @@ argv[1] is the role:
               model name (`/clear` and headless starts do not), the window is
               resolved from the record kept per claude process and from
               CLAUDE_CODE_MAX_CONTEXT_TOKENS.
-  measure  -- wire to Stop. Reads usage, moves the latch, queues the message.
-              At the urgent band it also speaks immediately (Stop can inject).
-  deliver  -- wire to PostToolUse / UserPromptSubmit. Speaks whatever measure
-              queued, so the report rides a turn that was happening anyway.
+  measure  -- wire to Stop and PostToolUse. Reads usage, moves the latch, and
+              speaks on the spot when the latch just moved up into a band.
   config   -- not a hook. Called by /context-notify:config with the plugin
               data dir as argv[2]. Creates the config from the bundled
               template if absent, then prints the path and the thresholds.
-  precompact -- wire to PreCompact (matcher auto). Rewinds the latch and
-              queues one notice for the first turn after the compaction.
   check    -- not a hook. Called by /context-notify:setup after editing.
               Validates the config and exits non-zero if it has problems.
 
@@ -100,15 +96,9 @@ def load_config(path=None, info=None):
     cfg = load_json(path or config_path()) or load_json(BUNDLED_CONFIG) or {}
     entries = _bands_of(cfg)
     if entries:
-        chosen, why = "custom", "設定に bands があるため"
-    else:
-        chosen, why = choose_profile(cfg.get("profile", "auto"), info or {})
-        profile_cfg = load_json(profile_path(chosen)) or {}
-        entries = _bands_of(profile_cfg)
-        if not isinstance(cfg.get("urgent_from"), int):
-            cfg = dict(cfg, urgent_from=profile_cfg.get("urgent_from"))
-    urgent = cfg.get("urgent_from")
-    return entries, (int(urgent) if isinstance(urgent, int) else 90), (chosen, why)
+        return entries, ("custom", "設定に bands があるため")
+    chosen, why = choose_profile(cfg.get("profile", "auto"), info or {})
+    return _bands_of(load_json(profile_path(chosen)) or {}), (chosen, why)
 
 
 PLACEHOLDERS = (
@@ -188,10 +178,6 @@ def check_config(path):
         return [f"JSON として読めません: {path}"]
 
     problems = []
-    urgent = raw.get("urgent_from", 90)
-    if not isinstance(urgent, int) or not 1 <= urgent <= 100:
-        problems.append(f"urgent_from は 1〜100 の整数にしてください (現在: {urgent!r})")
-
     profile = raw.get("profile", "auto")
     if profile not in PROFILES + ("auto",):
         problems.append(
@@ -403,11 +389,11 @@ def speak(event, text):
 
 
 def measure(ev, entries):
-    """Move the latch to match current usage. Returns the band just crossed.
+    """Move the latch to match current usage. Returns the text to speak, if any.
 
     The transcript is written asynchronously, so at Stop the newest assistant
-    line is sometimes not there yet. Measuring on every event instead of only
-    at Stop means a missed read is picked up by the next one.
+    line is sometimes not there yet. Measuring on PostToolUse as well as at Stop
+    means a missed read is picked up by the next one.
     """
     tp = ev.get("transcript_path")
     if not tp or not os.path.exists(tp):
@@ -427,49 +413,11 @@ def measure(ev, entries):
         return
 
     st["band"] = band
-    st.pop("pending", None)
+    sp.write_text(json.dumps(st))
     # Going down means a compact or clear reset the usage. Move the latch back
     # without saying anything.
     if band > prev and band in bands:
-        st["pending"] = render(bands[band], pct=pct, used=used, window=win)
-    sp.write_text(json.dumps(st))
-    return band if band > prev else None
-
-
-PRECOMPACT_MESSAGE = (
-    "auto compact が走りました。ここより前のやり取りは要約に置き換わっています。"
-    "要約が落とした前提があれば、作業を進める前に確認してください。"
-    "使用率の通知は 0% から測り直します。"
-)
-
-
-def precompact(ev):
-    """PreCompact: rewind the latch and leave one notice for after the compact.
-
-    Speaking here would be wasted — the turn that reads it is the one being
-    summarised away. Queuing keeps it for the first turn of the new context,
-    and rewinding matches how a drop in usage is handled everywhere else.
-    """
-    sp = state_path(ev["session_id"])
-    st = load(sp)
-    st["band"] = 0
-    st.pop("pending", None)  # a threshold notice about the context being replaced
-    # Kept apart from `pending`: the transcript can still read high right after
-    # PreCompact, and a measurement that lands in between would otherwise
-    # overwrite this notice with a threshold message.
-    st["notice"] = PRECOMPACT_MESSAGE
-    sp.write_text(json.dumps(st))
-
-
-def take_pending(session_id):
-    """Everything queued for the next turn: event notices first, then bands."""
-    sp = state_path(session_id)
-    st = load(sp)
-    parts = [st.pop("notice", None), st.pop("pending", None)]
-    texts = [p for p in parts if p]
-    if texts:
-        sp.write_text(json.dumps(st))
-    return " ".join(texts) if texts else None
+        return render(bands[band], pct=pct, used=used, window=win)
 
 
 def show_config(data_dir, session_id=None):
@@ -483,7 +431,7 @@ def show_config(data_dir, session_id=None):
     print(f"config: {path}" + ("  (テンプレから作成しました)" if created else ""))
     info = detect_autocompact()
     print(describe_autocompact(info))
-    entries, urgent_from, (profile, why) = load_config(path, info)
+    entries, (profile, why) = load_config(path, info)
     # Percentages mean different token counts per window, so show the bands
     # against this session's own window when we know it.
     st = load(state_path(session_id)) if session_id else {}
@@ -499,7 +447,6 @@ def show_config(data_dir, session_id=None):
     else:
         window, window_from = DEFAULT_WINDOW, "既定"
     print(f"profile: {profile}  ({why})")
-    print(f"urgent_from: {urgent_from}%  (この帯以上は Stop から即時に通知)")
     for entry in entries:
         at = entry.get("at")
         label = f"{at:>3}%" if isinstance(at, int) else "  ?%"
@@ -533,7 +480,7 @@ def report_problems(problems):
 
 
 def main():
-    role = sys.argv[1] if len(sys.argv) > 1 else "deliver"
+    role = sys.argv[1] if len(sys.argv) > 1 else "measure"
 
     if role in ("config", "check"):
         arg = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -561,11 +508,7 @@ def main():
         remember_window(ev)
         return
 
-    if role == "precompact":
-        precompact(ev)
-        return
-
-    bands, urgent_from, _profile = load_config(info=load(state_path(sid)).get("autocompact"))
+    bands, _profile = load_config(info=load(state_path(sid)).get("autocompact"))
     if not bands:
         return
 
@@ -575,12 +518,7 @@ def main():
         measure(ev, bands)
         return
 
-    band = measure(ev, bands)
-    # Stop only interrupts for a band worth its own turn; anything milder waits
-    # for a turn that was going to happen anyway.
-    if role == "measure" and not (band and band >= urgent_from):
-        return
-    text = take_pending(sid)
+    text = measure(ev, bands)
     if text:
         speak(ev.get("hook_event_name"), text)
 

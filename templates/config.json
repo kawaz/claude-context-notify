@@ -5,7 +5,6 @@
     "profile: auto / autocompact-on / autocompact-off.",
     "auto = pick the on or off bands depending on whether auto compact is enabled (default).",
     "To choose your own wording or thresholds, write bands here; they take precedence over the profile.",
-    "See templates/autocompact-off.json for the shape.",
-    "urgent_from written here overrides the profile's value."
+    "See templates/autocompact-off.json for the shape."
   ]
 }

@@ -18,7 +18,7 @@ unset CLAUDE_PLUGIN_DATA || true
 # templates/*.json is the user's to change, and latch behaviour must not be
 # asserted through it.
 cat > "$tmp/bands.json" <<'JSON'
-{"urgent_from": 90, "bands": [
+{"bands": [
   {"at": 20, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
   {"at": 40, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
   {"at": 60, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
@@ -72,44 +72,45 @@ check() {
   fails=$((fails + 1))
 }
 
-# --- deliver speaks on the way up, once ---------------------------------------
+# --- Stop speaks the band it just crossed, once -------------------------------
 new_session
 transcript_with 33000   # 66%
-check "deliver: band 60 に到達したら喋る" '"additionalContext"' "$(run deliver PostToolUse)"
-check "deliver: 同じ band では黙る" SILENT "$(run deliver PostToolUse)"
+check "Stop: 跨いだ帯をその場で喋る" "66% (33,000 / 50,000 tokens)" "$(run measure Stop)"
+check "Stop: 同じ band では黙る" SILENT "$(run measure Stop)"
 
-# --- Stop queues a mild band, the next deliver hands it over -------------------
+# --- PostToolUse speaks too, on the same latch --------------------------------
 new_session
 transcript_with 33000
-check "measure: 90% 未満は Stop で黙る" SILENT "$(run measure Stop)"
-check "deliver: Stop が積んだ文面を配る" "66% (33,000 / 50,000 tokens)" "$(run deliver UserPromptSubmit)"
-check "deliver: 配ったら空になる" SILENT "$(run deliver UserPromptSubmit)"
+check "PostToolUse: 跨いだ帯をその場で喋る" "66% (33,000 / 50,000 tokens)" \
+  "$(run measure PostToolUse)"
+check "PostToolUse: 同じ band では黙る" SILENT "$(run measure PostToolUse)"
+check "Stop: 別 event が進めた latch も引き継ぐ" SILENT "$(run measure Stop)"
 
-# --- urgent band speaks from Stop itself --------------------------------------
+# --- the high bands are not special -------------------------------------------
 new_session
 transcript_with 48600   # 97%
-check "measure: urgent 帯は Stop から即時に喋る" "97%" "$(run measure Stop)"
-check "measure: 同じ band では黙る" SILENT "$(run measure Stop)"
+check "Stop: 高い帯も同じくその場で喋る" "97%" "$(run measure Stop)"
 
 # --- a continuation turn this hook caused must not loop -----------------------
 new_session
 transcript_with 48600
 check "stop_hook_active: 継続ターンでは喋らない" SILENT \
   "$(run measure Stop ',"stop_hook_active":true')"
+check "stop_hook_active: 測ってはいるので次も黙る" SILENT "$(run measure Stop)"
 
 # --- falling usage rewinds the latch silently ---------------------------------
 new_session
 transcript_with 48600
-check "setup: 97% で喋る" "97%" "$(run deliver PostToolUse)"
+check "setup: 97% で喋る" "97%" "$(run measure PostToolUse)"
 transcript_with 5000    # 10%
-check "compact 相当: 下がったら黙る" SILENT "$(run deliver PostToolUse)"
+check "compact 相当: 下がったら黙る" SILENT "$(run measure PostToolUse)"
 transcript_with 33000   # 66% again
-check "compact 後: 上がり直したら再び喋る" "66%" "$(run deliver PostToolUse)"
+check "compact 後: 上がり直したら再び喋る" "66%" "$(run measure PostToolUse)"
 
 # --- subagent lines are not the main thread -----------------------------------
 new_session
 transcript_with 48600 true
-check "sidechain 行しか無ければ測らない" SILENT "$(run deliver PostToolUse)"
+check "sidechain 行しか無ければ測らない" SILENT "$(run measure PostToolUse)"
 
 # --- window comes from the model role -----------------------------------------
 new_session
@@ -118,7 +119,7 @@ transcript_with 300000  # 30% of 1M, 150% of 200k
 printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"model\":\"claude-opus-5[1m]\"}" \
   | python3 "$script" model
 check "model 役が [1m] を記録したら 1M で割る" "30% (300,000 / 1,000,000 tokens)" \
-  "$(run deliver PostToolUse)"
+  "$(run measure PostToolUse)"
 
 # --- /clear: SessionStart without a model name ---------------------------------
 # The claude process is the same across /clear, so the window it recorded for
@@ -133,7 +134,7 @@ printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"so
   | python3 "$script" model
 transcript_with 300000
 check "model 欄が無くても同じ claude プロセスの記録から 1M で割る" \
-  "30% (300,000 / 1,000,000 tokens)" "$(run deliver PostToolUse)"
+  "30% (300,000 / 1,000,000 tokens)" "$(run measure PostToolUse)"
 unset CLAUDE_PID
 
 new_session
@@ -141,14 +142,14 @@ printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"so
   | CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 python3 "$script" model
 check "model 欄も記録も無ければ CLAUDE_CODE_MAX_CONTEXT_TOKENS で割る" \
   "30% (300,000 / 1,000,000 tokens)" \
-  "$(CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 run deliver PostToolUse)"
+  "$(CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 run measure PostToolUse)"
 
 new_session
 printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
   | python3 "$script" model
 transcript_with 100000  # 50% of the 200k default
 check "どの手掛かりも無ければ既定の 200k で割る" "50% (100,000 / 200,000 tokens)" \
-  "$(run deliver PostToolUse)"
+  "$(run measure PostToolUse)"
 
 export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 
@@ -156,20 +157,20 @@ export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 new_session
 transcript_with 33000
 cat > "$tmp/custom.json" <<'JSON'
-{"urgent_from": 50, "bands": [{"at": 50, "message": "CUSTOM {used_percent}%"}]}
+{"bands": [{"at": 50, "message": "CUSTOM {used_percent}%"}]}
 JSON
 check "設定の閾値と文面が使われる" "CUSTOM 66%" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/custom.json run deliver PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/custom.json run measure PostToolUse)"
 
 # --- the remaining-room placeholders complement the used ones ------------------
 new_session
 transcript_with 33000
 cat > "$tmp/available.json" <<'JSON'
-{"urgent_from": 90, "bands": [{"at": 50, "message": "LEFT {available_tokens} tokens / {available_percent}% of {window_tokens}"}]}
+{"bands": [{"at": 50, "message": "LEFT {available_tokens} tokens / {available_percent}% of {window_tokens}"}]}
 JSON
 check "available_tokens / available_percent が展開される" \
   "LEFT 17,000 tokens / 34% of 50,000" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/available.json run deliver PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/available.json run measure PostToolUse)"
 
 # --- /context-notify:config bootstraps the file --------------------------------
 cfgdir="$tmp/plugindata"
@@ -178,7 +179,6 @@ check "config: 初回はテンプレから作成する" "テンプレから作�
 # Asserted on the structure it prints, not on the shipped wording, which is the
 # user's to edit.
 check "config: 作成したファイルを読んで profile を決める" "profile: autocompact-" "$out"
-check "config: 閾値の下限を示す" "urgent_from:" "$out"
 check "config: 使えるプレースホルダを並べる" "{available_percent}" "$out"
 [[ -f "$cfgdir/config.json" ]] || { echo "NG: config file not created"; fails=$((fails + 1)); }
 
@@ -186,20 +186,20 @@ check "config: 使えるプレースホルダを並べる" "{available_percent}"
 new_session
 transcript_with 33000
 cat > "$tmp/typo.json" <<'JSON'
-{"urgent_from": 90, "bands": [{"at": 50, "message": "TYPO {pcnt}% {used_percent}%"}]}
+{"bands": [{"at": 50, "message": "TYPO {pcnt}% {used_percent}%"}]}
 JSON
 check "未知のプレースホルダはそのまま残して喋る" "TYPO {pcnt}% 66%" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run deliver PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run measure PostToolUse)"
 
 # A config left on the previous placeholder names must degrade to literal text,
 # never to an exception that breaks every turn of the session.
 new_session
 transcript_with 33000
 cat > "$tmp/oldnames.json" <<'JSON'
-{"urgent_from": 90, "bands": [{"at": 50, "message": "OLD {pct}% {used} {window}"}]}
+{"bands": [{"at": 50, "message": "OLD {pct}% {used} {window}"}]}
 JSON
 check "旧名の config でも hook は落ちず文面がそのまま出る" "OLD {pct}% {used} {window}" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/oldnames.json run deliver PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/oldnames.json run measure PostToolUse)"
 
 # --- check role: validation for /context-notify:setup --------------------------
 check_role() { CLAUDE_CONTEXT_NOTIFY_CONFIG="$1" python3 "$script" check 2>&1 || true; }
@@ -208,10 +208,9 @@ check "check: 新名だけの bands は妥当" "設定は妥当です" "$(check_
 check "check: 未知のプレースホルダを指摘" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo.json")"
 
 cat > "$tmp/bad.json" <<'JSON'
-{"urgent_from": 900, "bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
+{"bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
 JSON
 bad_out="$(check_role "$tmp/bad.json")"
-check "check: urgent_from の範囲外を指摘" "urgent_from は 1〜100" "$bad_out"
 check "check: 昇順違反を指摘" "昇順になっていません" "$bad_out"
 check "check: 重複を指摘" "重複しています" "$bad_out"
 check "check: 空の文面を指摘" "空でない文字列" "$bad_out"
@@ -271,7 +270,7 @@ printf '{"profile":"auto"}' > "$tmp/auto.json"
 printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
   | DISABLE_AUTO_COMPACT=1 python3 "$script" model
 check "profile auto: bands 無しでも profile の帯で通知する" '"additionalContext"' \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run deliver PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run measure PostToolUse)"
 check "profile auto: 無効なら off 側を選ぶ" "profile: autocompact-off" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json DISABLE_AUTO_COMPACT=1 \
      python3 "$script" config)"
@@ -279,17 +278,6 @@ check "state に検出結果が入る" '"enabled": false' "$(cat "$XDG_STATE_HOM
 
 check "profile auto: 有効なら on 側を選ぶ" "profile: autocompact-on" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json python3 "$script" config)"
-
-# --- PreCompact ----------------------------------------------------------------
-new_session
-transcript_with 48600
-check "setup: 97% まで上げる" "97%" "$(run deliver PostToolUse)"
-run precompact PreCompact
-check "precompact: latch を 0 に戻す" '"band": 0' "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
-# Japanese comes back \u-escaped in the JSON, so assert on the ASCII head.
-check "precompact: 直後のターンで知らせる (測定に上書きされない)" \
-  '"[context-notify] auto compact' "$(run deliver UserPromptSubmit)"
-check "precompact: 一度配ったら消える" SILENT "$(run deliver UserPromptSubmit)"
 
 # --- check role: new fields ----------------------------------------------------
 printf '{"profile":"nope"}' > "$tmp/badprofile.json"
