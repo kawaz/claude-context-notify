@@ -4,6 +4,9 @@
 argv[1] is the role:
   model    -- wire to SessionStart / PostModelSwitch. Records the context
               window, which only these events spell with the `[1m]` suffix.
+              When the payload carries no model name (`/clear` and headless
+              starts do not), the window is resolved from the record kept per
+              claude process and from CLAUDE_CODE_MAX_CONTEXT_TOKENS.
   measure  -- wire to Stop. Reads usage, moves the latch, queues the message.
               At the urgent band it also speaks immediately (Stop can inject).
   deliver  -- wire to PostToolUse / UserPromptSubmit. Speaks whatever measure
@@ -363,11 +366,15 @@ def _placeholder_names(template):
         return []
 
 
-def state_path(session_id):
+def state_dir():
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     d = pathlib.Path(base) / "claude-context-notify"
     d.mkdir(parents=True, exist_ok=True)
-    return d / f"{session_id}.json"
+    return d
+
+
+def state_path(session_id):
+    return state_dir() / f"{session_id}.json"
 
 
 def load(path):
@@ -413,13 +420,84 @@ def window_of(model_name):
     return 1_000_000 if "[1m]" in (model_name or "") else DEFAULT_WINDOW
 
 
-def window_for(st):
+def _claude_pid():
+    """PID of the claude process this hook belongs to, when it is in the env."""
+    pid = os.environ.get("CLAUDE_PID") or ""
+    return pid if pid.isdigit() else None
+
+
+def pid_record_path(pid):
+    d = state_dir() / "by-pid"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{pid}.json"
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, ValueError):
+        # A live process owned by somebody else, or an unusable pid string.
+        return True
+    return True
+
+
+def remember_pid_window(window):
+    """Keep the window under the claude process, so `/clear` can inherit it.
+
+    `/clear` starts a new session_id inside the same process and its
+    SessionStart payload carries no model name, which leaves the per-session
+    record with nothing to read. CLAUDE_PID is stable across that boundary.
+    """
+    pid = _claude_pid()
+    if not pid:
+        return
+    path = pid_record_path(pid)
+    path.write_text(json.dumps({"window": window}))
+    for other in path.parent.glob("*.json"):
+        if other != path and not _pid_alive(other.stem):
+            other.unlink(missing_ok=True)
+
+
+def pid_window():
+    """Window recorded by an earlier session of the same claude process."""
+    pid = _claude_pid()
+    if not pid:
+        return None
+    value = (load_json(pid_record_path(pid)) or {}).get("window")
+    return value if isinstance(value, int) else None
+
+
+def env_window():
+    """CLAUDE_CODE_MAX_CONTEXT_TOKENS, which Claude Code itself falls back to.
+
+    Claude Code reads this variable as the context window whenever it cannot
+    derive one from the model name (a gateway model it does not know, say), so
+    a session configured with it measures against the same number we do.
+    """
+    value = os.environ.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") or ""
+    return int(value) if value.isdigit() else None
+
+
+def resolve_window(recorded=None, model_name=None):
+    """The window to measure against, most specific source first.
+
+    The env override wins outright; then the model name as SessionStart /
+    PostModelSwitch spell it (the only place `[1m]` survives — the transcript
+    and the upstream request both drop it), then what an earlier session of
+    this claude process saw, then Claude Code's own window variable.
+    """
     override = os.environ.get("CLAUDE_CONTEXT_WINDOW_TOKENS")
     if override and override.isdigit():
         return int(override)
-    # Recorded by the `model` role. The transcript spells the model without its
-    # `[1m]` suffix, so this is the only place the real window is known.
-    return st.get("window") or DEFAULT_WINDOW
+    if model_name:
+        return window_of(model_name)
+    return recorded or pid_window() or env_window() or DEFAULT_WINDOW
+
+
+def window_for(st):
+    return resolve_window(recorded=st.get("window"))
 
 
 def remember_window(ev):
@@ -433,6 +511,7 @@ def remember_window(ev):
     name = ev.get("to_model") or ev.get("model")
     if name:
         st["window"] = window_of(name)
+        remember_pid_window(st["window"])
     st["autocompact"] = detect_autocompact(ev.get("cwd"))
     sp.write_text(json.dumps(st))
 
@@ -538,8 +617,16 @@ def show_config(data_dir, session_id=None):
     # Relative bands land differently depending on the window we measure
     # against, so show them against this session's own window when we know it.
     st = load(state_path(session_id)) if session_id else {}
-    window, window_from = st.get("window"), "このセッション"
-    if not window:
+    override = os.environ.get("CLAUDE_CONTEXT_WINDOW_TOKENS")
+    if override and override.isdigit():
+        window, window_from = int(override), "CLAUDE_CONTEXT_WINDOW_TOKENS"
+    elif st.get("window"):
+        window, window_from = st["window"], "このセッション"
+    elif pid_window():
+        window, window_from = pid_window(), "同じ claude プロセスの直前のセッション"
+    elif env_window():
+        window, window_from = env_window(), "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+    else:
         window, window_from = DEFAULT_WINDOW, "既定"
     print(f"profile: {profile}  ({why})")
     print(f"urgent_from: {urgent_from}%  (この帯以上は Stop から即時に通知)")

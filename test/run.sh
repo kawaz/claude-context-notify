@@ -22,6 +22,8 @@ export CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/off.json"
 export CLAUDE_CONFIG_DIR="$tmp/cfgdir"
 mkdir -p "$CLAUDE_CONFIG_DIR"
 unset CLAUDE_CODE_AUTO_COMPACT_WINDOW DISABLE_AUTO_COMPACT DISABLE_COMPACT || true
+# Window fallbacks the developer's own session may have set.
+unset CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_PID || true
 
 transcript="$tmp/transcript.jsonl"
 fails=0
@@ -106,6 +108,37 @@ printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"mo
   | python3 "$script" model
 check "model 役が [1m] を記録したら 1M で割る" "30% (300,000 / 1,000,000 tokens)" \
   "$(run deliver PostToolUse)"
+
+# --- /clear: SessionStart without a model name ---------------------------------
+# The claude process is the same across /clear, so the window it recorded for
+# the previous session carries over. $$ is a live pid, so the stale-record
+# sweep leaves it alone.
+export CLAUDE_PID=$$
+new_session
+printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"model\":\"claude-opus-5[1m]\"}" \
+  | python3 "$script" model
+new_session   # /clear hands out a new session_id inside the same process
+printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
+  | python3 "$script" model
+transcript_with 300000
+check "model 欄が無くても同じ claude プロセスの記録から 1M で割る" \
+  "30% (300,000 / 1,000,000 tokens)" "$(run deliver PostToolUse)"
+unset CLAUDE_PID
+
+new_session
+printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
+  | CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 python3 "$script" model
+check "model 欄も記録も無ければ CLAUDE_CODE_MAX_CONTEXT_TOKENS で割る" \
+  "30% (300,000 / 1,000,000 tokens)" \
+  "$(CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 run deliver PostToolUse)"
+
+new_session
+printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
+  | python3 "$script" model
+transcript_with 100000  # 50% of the 200k default
+check "どの手掛かりも無ければ既定の 200k で割る" "50% (100,000 / 200,000 tokens)" \
+  "$(run deliver PostToolUse)"
+
 export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 
 # --- config is user-supplied ---------------------------------------------------

@@ -104,7 +104,22 @@ auto compact が走ると `PreCompact` hook が latch を戻し、新しい cont
 - `urgent_from` — この帯以上は `Stop` から即時に喋る (継続ターンが 1 本増える)。
   それ未満の帯は「どうせ起きる次のターン」に相乗りする
 
-`CLAUDE_CONTEXT_WINDOW_TOKENS` で window を上書きできる (動作確認用)。
+### window の決まり方
+
+使用率は割る相手の window 次第で意味が変わる。`[1m]` を保っている唯一の手掛かりである
+model 名は、`/clear` や `claude -p` 起点の `SessionStart` payload には載らない。そこで
+window は次の順で、最初に答えが出たものを使う。
+
+1. `CLAUDE_CONTEXT_WINDOW_TOKENS` — 明示的な上書き (動作確認にも使える)
+2. `SessionStart` / `PostModelSwitch` の `model` / `to_model` 欄 (来ている場合)
+3. 同じ claude プロセスが直前に記録した window。`CLAUDE_PID` をキーに
+   `$XDG_STATE_HOME/claude-context-notify/by-pid/` へ控えてある。`/clear` はプロセスを
+   維持したまま session id だけを差し替えるので、そこから引き継げる。終了したプロセスの
+   記録は新しい記録を書くついでに掃除される
+4. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` — Claude Code 本体が「model 名から window を判定
+   できないときに context window とみなす」変数。これを設定したセッションは、本体と
+   同じ数値で測られる
+5. 200,000 tokens
 
 ## 仕組み
 

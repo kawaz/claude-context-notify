@@ -108,7 +108,22 @@ the first turn of the new context.
 - `urgent_from` — bands at or above this speak immediately from `Stop`, costing one extra
   continuation turn. Milder bands wait for a turn that was going to happen anyway.
 
-`CLAUDE_CONTEXT_WINDOW_TOKENS` overrides the detected window (useful for testing).
+### How the context window is resolved
+
+The percentage is only as good as the window it divides by, and the model name — the one
+place the `[1m]` suffix survives — is missing from some `SessionStart` payloads (`/clear`
+and `claude -p` starts). So the window comes from the first of these that answers:
+
+1. `CLAUDE_CONTEXT_WINDOW_TOKENS` — an explicit override (also handy for testing).
+2. The `model` / `to_model` field of `SessionStart` / `PostModelSwitch`, when it is there.
+3. The window the same claude process recorded earlier, keyed by `CLAUDE_PID` under
+   `$XDG_STATE_HOME/claude-context-notify/by-pid/`. `/clear` keeps the process and only
+   changes the session id, so the window carries over. Records of processes that are gone
+   are swept away as new ones are written.
+4. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` — the variable Claude Code itself treats as the context
+   window when it cannot derive one from the model name, so a session that sets it is
+   measured against the same number the app uses.
+5. 200,000 tokens.
 
 ## How it works
 

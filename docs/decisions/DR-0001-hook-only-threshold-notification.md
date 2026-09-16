@@ -61,15 +61,33 @@ measure は state を進めるだけなので多重に走っても無害 (`band 
 「block 直後のターンで reasoning を失わせ prompt cache を外す」不具合を持っていた経緯が
 あり (v2.1.259 で修正)、副作用を持ちうる経路だった裏づけになる。
 
-### 4. window は `SessionStart` / `PostModelSwitch` からしか取れない
+### 4. window は model 名・プロセス単位の記録・env の 3 系統から解決する
 
-transcript の `message.model` も upstream へ出るリクエストの `model` も `[1m]` を
-落として `claude-opus-5` になる。`[1m]` を保っているのはこの 2 event の model 欄だけ。
-`model` 役の hook がこれを state に書き、測定側が読む。
+model 名から取れるのは `SessionStart` / `PostModelSwitch` の model 欄だけ。transcript の
+`message.model` も upstream へ出るリクエストの `model` も `[1m]` を落として
+`claude-opus-5` になる。`model` 役の hook がこれを state に書き、測定側が読む。
 
-3 段のフォールバック: `CLAUDE_CONTEXT_WINDOW_TOKENS` env → state の記録値 → 200,000。
-公式が「`model` 欄は always ではない」と書いており、実際 `claude -p` では来なかったため
-既定値を残す。
+ただし **model 欄は必ず来るわけではない**。`/clear` の SessionStart (`source: "clear"`)
+と `claude -p` の起動では payload に `model` が無い (実測、v2.1.272。`compact` 由来は
+`mainLoopModel` を渡すので有る)。model 欄だけに頼ると 1M セッションが 200k 換算になり、
+使用率が実際の 5 倍で通知される。
+
+解決の優先順位:
+
+1. `CLAUDE_CONTEXT_WINDOW_TOKENS` env (明示上書き)
+2. payload の `model` / `to_model` の `[1m]`
+3. **同じ claude プロセスが直前に記録した window**。`/clear` は同一プロセス内で
+   session_id だけを差し替えるので、hook の env に届く `CLAUDE_PID` をキーに
+   `<state dir>/by-pid/<pid>.json` へ window を控えておけば引き継げる。書き込みのついでに
+   生存していない pid の記録を掃除する。`CLAUDE_PID` が無い環境ではこの段を飛ばす
+4. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` env。Claude Code 本体が「model 名から window を
+   判定できない場合に context window とみなす」変数なので、これを設定したセッションは
+   本体と同じ数値で測ることになる
+5. 200,000 (既定)
+
+測定側 (`window_for()`) も同じ順序で解決する。3 はファイル 1 本の read、4 は env の
+read だけなので、event ごとに走っても `ps` を伴う auto compact 検出のようなコストは
+発生しない。
 
 ### 5. latch は band を 1 個だけ持ち、上がった時だけ喋る
 
