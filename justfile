@@ -78,3 +78,12 @@ promote:
 # push with gates (= check-on-default-branch を最初に置いて、worktree 違いなら lint 等を回さず即終了)
 push: check-on-default-branch ci
     bump-semver vcs push --branch main --jj-bookmark-auto-advance
+    @just _local-plugin-update
+
+# push 直後にこのマシンの plugin cache を新版へ (適用は各セッションで /reload-plugins)
+[private]
+_local-plugin-update:
+    -claude plugin marketplace update context-notify
+    -claude plugin update context-notify@context-notify
+    @echo ""
+    @echo "[hint] /reload-plugins to apply in this session without restart"
