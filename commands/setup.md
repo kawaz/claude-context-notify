@@ -52,8 +52,8 @@ $ARGUMENTS
   "profile": "auto",
   "urgent_from": 90,
   "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
-    { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
+    { "at": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "at": 90, "message": "Context at {used_percent}%, {available_tokens} tokens left. Do not start new work; begin the handoff." }
   ]
 }
 ```

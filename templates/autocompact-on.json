@@ -3,31 +3,23 @@
   "bands": [
     {
       "at": 20,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)。このセッションは auto compact が有効です。発火点は Claude Code 側の設定 (window - buffer) で決まるので、その手前の % に帯 (`at`) を置いて使ってください。以後 40%, 60%, 80%, 90%, 95%, 97% で通知します。"
+      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens). You will be notified again at 40%, 60%, 80% and 90%. Use these as a reference for pacing your work."
     },
     {
       "at": 40,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
+      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
       "at": 60,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)"
+      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
       "at": 80,
-      "message": "現在のメインコンテキスト使用量: {pct}% ({used} / {window} tokens)。auto compact が有効なので、この先は要約に置き換わる前提で動いてください。落とされたくない前提・決定事項があるなら、今のうちに docs か引き継ぎメモに書き出してください。自分のタイミングで畳みたいなら手動の /compact か /pre-clear を検討する頃合いです。"
+      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
       "at": 90,
-      "message": "メインコンテキストが {pct}% ({used} / {window} tokens) を超えました。auto compact が走れば以降のやり取りは要約に置き換わります。新しい大きな作業には着手せず、着手中のものは区切りをつけてください。"
-    },
-    {
-      "at": 95,
-      "message": "ctx {pct}% ({used} / {window} tokens)。compact される前提で、引き継ぎを今のうちに書き出してください。"
-    },
-    {
-      "at": 97,
-      "message": "ctx {pct}% ({used} / {window} tokens)！いつ compact されてもおかしくありません。引き継ぎの書き出しを最優先で終わらせてください。"
+      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     }
   ]
 }

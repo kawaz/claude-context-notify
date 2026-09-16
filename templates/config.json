@@ -2,10 +2,10 @@
   "profile": "auto",
 
   "_comment": [
-    "profile: auto / autocompact-on / autocompact-off。",
-    "auto = auto compact が有効かどうかを見て on / off の帯を選ぶ (既定)。",
-    "文面や閾値を自分で決めるなら、ここに bands を書けば profile より優先される。",
-    "形は templates/autocompact-off.json を参照。",
-    "urgent_from を書けば profile の値を上書きできる。"
+    "profile: auto / autocompact-on / autocompact-off.",
+    "auto = pick the on or off bands depending on whether auto compact is enabled (default).",
+    "To choose your own wording or thresholds, write bands here; they take precedence over the profile.",
+    "See templates/autocompact-off.json for the shape.",
+    "urgent_from written here overrides the profile's value."
   ]
 }

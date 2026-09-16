@@ -18,7 +18,7 @@ the model actually reads:
 
 ```
 <system-reminder>
-PostToolUse:Bash hook additional context: [context-notify] 現在のメインコンテキスト使用量: 60% (36,242 / 60,000 tokens)
+PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36,242 / 60,000 tokens)
 </system-reminder>
 ```
 
