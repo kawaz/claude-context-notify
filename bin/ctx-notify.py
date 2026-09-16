@@ -119,9 +119,6 @@ PLACEHOLDERS = (
     "window_tokens",
 )
 
-# Old spellings, so `check` can point at the name that replaced them.
-RENAMED = {"pct": "used_percent", "used": "used_tokens", "window": "window_tokens"}
-
 
 def config_dir():
     """Where Claude Code keeps its settings for this session.
@@ -229,13 +226,7 @@ def check_config(path):
             problems.append(f"{where}.message は空でない文字列にしてください")
             continue
         for name in _placeholder_names(msg):
-            if name in PLACEHOLDERS:
-                continue
-            if name in RENAMED:
-                problems.append(
-                    f"{where}.message: {{{name}}} は {{{RENAMED[name]}}} に改名されました"
-                )
-            else:
+            if name not in PLACEHOLDERS:
                 problems.append(
                     f"{where}.message: 未知のプレースホルダ {{{name}}} "
                     f"(使えるのは {', '.join('{%s}' % p for p in PLACEHOLDERS)})"

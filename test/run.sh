@@ -191,8 +191,8 @@ JSON
 check "未知のプレースホルダはそのまま残して喋る" "TYPO {pcnt}% 66%" \
   "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run deliver PostToolUse)"
 
-# A config still written in the old names must degrade to literal text, never
-# to an exception that breaks every turn of the session.
+# A config left on the previous placeholder names must degrade to literal text,
+# never to an exception that breaks every turn of the session.
 new_session
 transcript_with 33000
 cat > "$tmp/oldnames.json" <<'JSON'
@@ -206,11 +206,6 @@ check_role() { CLAUDE_CONTEXT_NOTIFY_CONFIG="$1" python3 "$script" check 2>&1 ||
 
 check "check: 新名だけの bands は妥当" "設定は妥当です" "$(check_role "$tmp/bands.json")"
 check "check: 未知のプレースホルダを指摘" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo.json")"
-
-old_out="$(check_role "$tmp/oldnames.json")"
-check "check: {pct} の改名先を案内" "{pct} は {used_percent} に改名されました" "$old_out"
-check "check: {used} の改名先を案内" "{used} は {used_tokens} に改名されました" "$old_out"
-check "check: {window} の改名先を案内" "{window} は {window_tokens} に改名されました" "$old_out"
 
 cat > "$tmp/bad.json" <<'JSON'
 {"urgent_from": 900, "bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
