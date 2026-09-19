@@ -1,7 +1,7 @@
 {
   "name": "context-notify",
   "description": "Tell the running session how much of its context window it has used, once per threshold crossed (20/40/60/80/90/95/97%). Hook-only; thresholds and wording are user-configurable.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "author": { "name": "kawaz" },
   "license": "MIT",
   "repository": "https://github.com/kawaz/claude-context-notify"
