@@ -1,5 +1,5 @@
 ---
-description: context-notify の設定ファイルの場所と現在の閾値・文面を表示する (無ければテンプレから作成)
+description: context-notify の通知リスト 2 ファイルの場所と、現在の閾値・文面を表示する (無ければテンプレから作成)
 disable-model-invocation: true
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 ---
@@ -17,11 +17,13 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 
 貼った後に、次の 1 行だけを添える (設定ファイルは自分で編集しない):
 
-> 閾値や文面を変えるには、上の `config:` のパスをエディタで開いて編集してください。
+> 閾値や文面を変えるには、上に出ているパスのファイルをエディタで開いて編集してください。
 
-出力には、auto compact が有効かどうかと、そこから選ばれた profile も含まれる。
+通知リストは 2 ファイルある。auto compact が有効なセッションでは
+`autocompact-on.json`、無効なセッションでは `autocompact-off.json` が使われる
+(出力にはどちらが選ばれるかも含まれる)。両方を同じ内容にすれば、有効 / 無効に
+関わらず同じ通知になる。
 
-設定ファイルの形式は `profile` (`auto` / `autocompact-on` / `autocompact-off`) と
-`bands` (`at` = 閾値 %、`message` = 文面)。`bands` を書くと profile より優先される。
-文面では `{used_tokens}` / `{used_percent}` / `{available_tokens}` /
-`{available_percent}` / `{window_tokens}` が使える。
+形式は `bands` (`at` = 閾値 %、`message` = 文面) のみ。文面では `{used_tokens}` /
+`{used_percent}` / `{available_tokens}` / `{available_percent}` / `{window_tokens}`
+が使える。

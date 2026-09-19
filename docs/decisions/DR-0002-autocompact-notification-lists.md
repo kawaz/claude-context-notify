@@ -1,4 +1,4 @@
-# DR-0002: auto compact は有効 / 無効だけ見てテンプレを使い分ける
+# DR-0002: 利用者設定は data dir の通知リスト 2 ファイル、auto compact の有効 / 無効で選ぶ
 
 - Status: Active
 - Date: 2026-09-11
@@ -61,27 +61,33 @@ compact 前提の文面が誤解を招く。どちらの前提で動いている
 window を記録する `model` 役に相乗りさせ、`autocompact: {enabled, reason}` として
 state に置く。読むのは JSON ファイル数個と env 2 本だけで、プロセス走査は行わない。
 
-### 2. profile で帯を切り替える
+### 2. 利用者が編集するのは通知リスト 2 ファイルだけ
 
-`templates/autocompact-off.json` と `templates/autocompact-on.json` を持ち、
-設定の `profile` が `auto` (既定) なら検出結果で選ぶ:
+plugin data dir (`${CLAUDE_PLUGIN_DATA}`、無ければ
+`$XDG_CONFIG_HOME/claude-context-notify/`) に置く 2 ファイルが利用者設定の全て:
 
-| 検出 | 選ぶ profile |
+| ファイル | 使われる時 |
 |---|---|
-| 有効 | `autocompact-on` |
-| 無効 | `autocompact-off` |
+| `autocompact-on.json` | auto compact が有効 |
+| `autocompact-off.json` | auto compact が無効 |
 
-帯の位置 (`at`) は両 profile で同じ (20/40/60/80/90/95/97)。違うのは文面だけで、
-on 側は「発火点は Claude Code 側の設定で決まるので、その手前の % に `at` を置け」と
-最初の帯で案内し、高い帯では compact される前提の指示を出す。
+形式は `{"bands": [{"at": <1〜100 の整数>, "message": "<文面>"}, ...]}` のみ。
+どちらのファイルが読まれるかは検出結果だけで決まり、利用者が指定する余地は持たない。
+**片方に固定したい利用者は 2 ファイルを同じ内容にすればよい** ので、指定する仕組みを
+持つ必要が無い (= 選択肢を 1 つ増やすより、ファイルを 2 つ編集できるほうが単純)。
 
-**設定に `bands` があればそれが最優先** (profile より上)。ユーザが自分で書いた帯を
-検出結果で上書きしない。
+帯の位置 (`at`) は同梱テンプレでは両者同じ (20/40/60/80/90/95/97 と 20/40/60/80/90)。
+違うのは文面で、on 側は高い帯で compact される前提の指示を出す。
+
+無い時は hook 側でも同梱の `templates/<name>.json` を data dir へ複製する
+(= 利用者が編集の起点を見つけられる)。**既存ファイルは決して上書きしない。**
+data dir が書けない環境では同梱テンプレをそのまま読んで動作を続ける。
 
 ## Consequences
 
 - どの % で auto compact が走るかは plugin からは分からない。on 側の帯は固定 % なので、
   発火点の手前で鳴らしたいユーザは自分で `at` を調整する
+- 有効時と無効時で同じ文面を使いたい場合、利用者は 2 ファイルを揃える手間を負う
 - セッション中に `/autocompact` や設定変更で有効 / 無効が変わっても追従しない
   (通知 hook が無く、検出は `SessionStart` / `PostModelSwitch` の一度きり)
 

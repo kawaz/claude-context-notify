@@ -14,10 +14,10 @@ default: list
 list:
     @just --list --unsorted
 
-# JSON 妥当性 (plugin.json / marketplace.json / hooks.json / 既定 config)
+# JSON 妥当性 (plugin.json / marketplace.json / hooks.json / 同梱テンプレ)
 [private]
 lint-json:
-    for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json templates/config.json; do \
+    for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json templates/*.json; do \
       jq empty "$f" && echo "ok: $f"; \
     done
 

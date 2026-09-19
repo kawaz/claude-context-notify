@@ -37,12 +37,14 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 
 ## 閾値と文面のカスタマイズ
 
-command は 2 本ある。設定ファイルはどちらも plugin data dir に置かれ、plugin を更新しても消えない。
+利用者が編集するのは plugin data dir に置かれた 2 ファイル
+(`autocompact-on.json` / `autocompact-off.json`) だけで、plugin を更新しても消えない。
+そこへの入口として command が 2 本ある。
 
 | command | 誰が使うか | 何をするか |
 |---|---|---|
-| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、パスと現在の閾値・文面を表示する。**編集はしない** |
-| `/context-notify:setup [要望]` | モデルに編集させる | 自由文の要望どおりに設定を書き換え、妥当性を検証して差分を報告する |
+| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、2 ファイルのパスとこのセッションが使う閾値・文面を表示する。**編集はしない** |
+| `/context-notify:setup [要望]` | モデルに編集させる | 自由文の要望どおりにリストを書き換え、妥当性を検証して差分を報告する |
 
 自分でファイルを開いて直したいなら `config`、言葉で頼みたいなら `setup`:
 
@@ -52,22 +54,21 @@ command は 2 本ある。設定ファイルはどちらも plugin data dir に�
 /context-notify:setup            # 引数なし = 現在値を見せて「何を変えますか」と聞く
 ```
 
-`setup` は書き換えたあとに `ctx-notify.py check` を回し、JSON の妥当性・閾値
+`setup` は書き換えたあとに `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・閾値
 (1〜100 の整数、昇順、重複なし)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
 ### auto compact の有効 / 無効でテンプレを切り替える
 
 auto compact が有効なセッションでは、高い帯の文面は「compact される前提で引き継ぎを
 書き出せ」であるべきで、無効なセッションでは compact 前提の文面が誤解を招く。そこで
-plugin は起動時に auto compact が有効かどうかだけを調べ、帯のテンプレを選び分ける。
+plugin は起動時に auto compact が有効かどうかだけを調べ、読むファイルを選び分ける。
 
-| 検出結果 | 使う profile |
+| 検出結果 | 読むファイル |
 |---|---|
-| 有効 | `autocompact-on` (compact される前提の文面) |
-| 無効 (`DISABLE_AUTO_COMPACT` / `DISABLE_COMPACT` / `autoCompactEnabled: false`) | `autocompact-off` |
+| 有効 | `autocompact-on.json` (compact される前提の文面) |
+| 無効 (`DISABLE_AUTO_COMPACT` / `DISABLE_COMPACT` / `autoCompactEnabled: false`) | `autocompact-off.json` |
 
-設定の `profile` に `autocompact-on` / `autocompact-off` を書けば固定できる。
-自分で `bands` を書いた場合は profile より優先される。
+有効 / 無効に関わらず同じ通知にしたければ、2 ファイルを同じ内容にする。
 
 **auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window
 設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `at` にその % を書く。
@@ -76,16 +77,17 @@ settings 優先順で探す (プロジェクトの `.claude/settings.local.json`
 → ユーザの `settings.local.json` → `settings.json`、最後の手段として `.claude.json`)。
 設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
 (`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。判断の根拠は
-[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md)。
+[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md)。
 
 auto compact が走ると使用量が下がり、latch も黙って一緒に戻る。閾値が再武装されるので、
 次に帯を跨いだ時にいつもどおり通知される。
 
-### 設定ファイルの形式
+### ファイルの形式
+
+2 ファイルとも同じ形をしている。
 
 ```json
 {
-  "profile": "auto",
   "bands": [
     { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
     { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
@@ -93,8 +95,6 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 }
 ```
 
-- `profile` — `auto` (既定、検出結果で選ぶ) / `autocompact-on` / `autocompact-off`。
-  `bands` を書けばそちらが優先される
 - `bands[].at` — 閾値 (%)。個数も順序も自由
 - `bands[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
@@ -140,7 +140,7 @@ latch は `$XDG_STATE_HOME/claude-context-notify/<session_id>.json` に band を
 
 設計判断の記録:
 [DR-0001](./docs/decisions/DR-0001-hook-only-threshold-notification.md) (hook だけで組み立てる)、
-[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md) (auto compact の有無と profile)。
+[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md) (通知リスト 2 ファイル)。
 
 ## ライセンス
 

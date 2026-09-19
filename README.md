@@ -38,13 +38,14 @@ Then, to see (and create) your config:
 
 ## Configuring thresholds and wording
 
-There are two commands. Either way the config lives in the plugin data directory, so it
-survives plugin updates.
+Everything you can configure lives in two files in the plugin data directory, so it survives
+plugin updates: `autocompact-on.json` and `autocompact-off.json`. There are two commands for
+reaching them.
 
 | Command | Audience | What it does |
 |---|---|---|
-| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled template on first run, then prints the path and the current bands. **Never edits.** |
-| `/context-notify:setup [request]` | The model edits for you | Rewrites the config to match a free-form request, validates it, and reports the diff |
+| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled templates on first run, then prints both paths and the bands this session uses. **Never edits.** |
+| `/context-notify:setup [request]` | The model edits for you | Rewrites the lists to match a free-form request, validates them, and reports the diff |
 
 Open the file yourself with `config`, or ask in words with `setup`:
 
@@ -54,7 +55,7 @@ Open the file yourself with `config`, or ask in words with `setup`:
 /context-notify:setup            # no argument: shows the current bands and asks what to change
 ```
 
-After editing, `setup` runs `ctx-notify.py check`, which verifies the JSON, the thresholds
+After editing, `setup` runs `ctx-notify.py check`, which verifies both files — the JSON, the thresholds
 (integers 1–100, ascending, no duplicates), the presence of messages, and the spelling of
 every placeholder.
 
@@ -62,16 +63,15 @@ every placeholder.
 
 When auto-compact is on, the high bands should be telling you to write a handoff before the
 conversation is summarised away; when it is off, that wording is just misleading. So the
-plugin checks one thing at startup — whether auto-compact is enabled — and picks the band
-template to match.
+plugin checks one thing at startup — whether auto-compact is enabled — and reads the list
+that matches.
 
-| Detected | Profile used |
+| Detected | List read |
 |---|---|
-| Enabled | `autocompact-on` (wording that assumes a compaction is coming) |
-| Disabled (`DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, `autoCompactEnabled: false`) | `autocompact-off` |
+| Enabled | `autocompact-on.json` (wording that assumes a compaction is coming) |
+| Disabled (`DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, `autoCompactEnabled: false`) | `autocompact-off.json` |
 
-Set `profile` to `autocompact-on` / `autocompact-off` to pin it. Writing your own `bands`
-overrides the profile entirely.
+To get the same notifications either way, give both files the same contents.
 
 **The plugin does not work out where auto-compact fires.** That point is set by Claude Code's
 own window setting (`window - buffer`), so if you want a band just before it, put that percent
@@ -81,16 +81,17 @@ in `at` yourself. The on/off answer comes from the two environment variables abo
 `settings.json`, with `.claude.json` as a last resort. The config directory is located from
 `CLAUDE_ENV_FILE`, since `CLAUDE_CONFIG_DIR` only reaches hooks when you export it yourself.
 The reasoning is recorded in
-[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md).
+[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md).
 
 When auto-compact does fire, usage drops and the latch silently rewinds with it, so the
 thresholds re-arm and the next crossing is announced as usual.
 
-### Config format
+### List format
+
+Both files have the same shape:
 
 ```json
 {
-  "profile": "auto",
   "bands": [
     { "at": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
     { "at": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
@@ -98,8 +99,6 @@ thresholds re-arm and the next crossing is announced as usual.
 }
 ```
 
-- `profile` — `auto` (default, chosen by detection), `autocompact-on`, or `autocompact-off`.
-  Ignored when `bands` is present.
 - `bands[].at` — the threshold, in percent. Any number of bands, in any order.
 - `bands[].message` — what the session is told. `{used_tokens}` (tokens used),
   `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
@@ -146,7 +145,7 @@ or `/clear` re-arms the thresholds without emitting a pointless "you went down" 
 
 Design rationale:
 [DR-0001](./docs/decisions/DR-0001-hook-only-threshold-notification.md) (hook-only design) and
-[DR-0002](./docs/decisions/DR-0002-autocompact-profiles.md) (auto-compact profiles).
+[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md) (the two notification lists).
 
 ## License
 

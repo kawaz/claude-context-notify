@@ -14,21 +14,26 @@ trap 'rm -rf "$tmp"' EXIT
 export XDG_STATE_HOME="$tmp/state"
 export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 unset CLAUDE_PLUGIN_DATA || true
-# Bands live in a fixture rather than in a shipped profile: the wording of
-# templates/*.json is the user's to change, and latch behaviour must not be
-# asserted through it.
-cat > "$tmp/bands.json" <<'JSON'
-{"bands": [
-  {"at": 20, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 40, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 60, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 80, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 90, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 95, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
-  {"at": 97, "message": "ctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"}
-]}
-JSON
-export CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/bands.json"
+# Bands live in a fixture data dir rather than in the shipped templates: the
+# wording of templates/*.json is the user's to change, and latch behaviour must
+# not be asserted through it. Both lists carry the same wording here, so latch
+# cases do not depend on which one is selected.
+fixture_dir="$tmp/data"
+mkdir -p "$fixture_dir"
+bands_body='{"bands": [
+  {"at": 20, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 40, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 60, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 80, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 90, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 95, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
+  {"at": 97, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"}
+]}'
+# write_list <path> <prefix>
+write_list() { printf '%s' "${bands_body//PREFIX/$2}" > "$1"; }
+write_list "$fixture_dir/autocompact-on.json" ""
+write_list "$fixture_dir/autocompact-off.json" ""
+export CLAUDE_CONTEXT_NOTIFY_DATA="$fixture_dir"
 # Detection must not see the developer's own environment.
 export CLAUDE_CONFIG_DIR="$tmp/cfgdir"
 mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -75,13 +80,13 @@ check() {
 # --- Stop speaks the band it just crossed, once -------------------------------
 new_session
 transcript_with 33000   # 66%
-check "Stop: 跨いだ帯をその場で喋る" "66% (33,000 / 50,000 tokens)" "$(run measure Stop)"
+check "Stop: 跨いだ帯をその場で喋る" "ctx 66% (33,000 / 50,000 tokens)" "$(run measure Stop)"
 check "Stop: 同じ band では黙る" SILENT "$(run measure Stop)"
 
 # --- PostToolUse speaks too, on the same latch --------------------------------
 new_session
 transcript_with 33000
-check "PostToolUse: 跨いだ帯をその場で喋る" "66% (33,000 / 50,000 tokens)" \
+check "PostToolUse: 跨いだ帯をその場で喋る" "ctx 66% (33,000 / 50,000 tokens)" \
   "$(run measure PostToolUse)"
 check "PostToolUse: 同じ band では黙る" SILENT "$(run measure PostToolUse)"
 check "Stop: 別 event が進めた latch も引き継ぐ" SILENT "$(run measure Stop)"
@@ -89,7 +94,7 @@ check "Stop: 別 event が進めた latch も引き継ぐ" SILENT "$(run measure
 # --- the high bands are not special -------------------------------------------
 new_session
 transcript_with 48600   # 97%
-check "Stop: 高い帯も同じくその場で喋る" "97%" "$(run measure Stop)"
+check "Stop: 高い帯も同じくその場で喋る" "ctx 97%" "$(run measure Stop)"
 
 # --- a continuation turn this hook caused must not loop -----------------------
 new_session
@@ -101,11 +106,11 @@ check "stop_hook_active: 測ってはいるので次も黙る" SILENT "$(run mea
 # --- falling usage rewinds the latch silently ---------------------------------
 new_session
 transcript_with 48600
-check "setup: 97% で喋る" "97%" "$(run measure PostToolUse)"
+check "setup: 97% で喋る" "ctx 97%" "$(run measure PostToolUse)"
 transcript_with 5000    # 10%
 check "compact 相当: 下がったら黙る" SILENT "$(run measure PostToolUse)"
 transcript_with 33000   # 66% again
-check "compact 後: 上がり直したら再び喋る" "66%" "$(run measure PostToolUse)"
+check "compact 後: 上がり直したら再び喋る" "ctx 66%" "$(run measure PostToolUse)"
 
 # --- subagent lines are not the main thread -----------------------------------
 new_session
@@ -118,7 +123,7 @@ unset CLAUDE_CONTEXT_WINDOW_TOKENS
 transcript_with 300000  # 30% of 1M, 150% of 200k
 printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"model\":\"claude-opus-5[1m]\"}" \
   | python3 "$script" model
-check "model 役が [1m] を記録したら 1M で割る" "30% (300,000 / 1,000,000 tokens)" \
+check "model 役が [1m] を記録したら 1M で割る" "ctx 30% (300,000 / 1,000,000 tokens)" \
   "$(run measure PostToolUse)"
 
 # --- /clear: SessionStart without a model name ---------------------------------
@@ -134,91 +139,138 @@ printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"so
   | python3 "$script" model
 transcript_with 300000
 check "model 欄が無くても同じ claude プロセスの記録から 1M で割る" \
-  "30% (300,000 / 1,000,000 tokens)" "$(run measure PostToolUse)"
+  "ctx 30% (300,000 / 1,000,000 tokens)" "$(run measure PostToolUse)"
 unset CLAUDE_PID
 
 new_session
 printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
   | CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 python3 "$script" model
 check "model 欄も記録も無ければ CLAUDE_CODE_MAX_CONTEXT_TOKENS で割る" \
-  "30% (300,000 / 1,000,000 tokens)" \
+  "ctx 30% (300,000 / 1,000,000 tokens)" \
   "$(CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000 run measure PostToolUse)"
 
 new_session
 printf '%s' "{\"session_id\":\"s$sid\",\"hook_event_name\":\"SessionStart\",\"source\":\"clear\"}" \
   | python3 "$script" model
 transcript_with 100000  # 50% of the 200k default
-check "どの手掛かりも無ければ既定の 200k で割る" "50% (100,000 / 200,000 tokens)" \
+check "どの手掛かりも無ければ既定の 200k で割る" "ctx 50% (100,000 / 200,000 tokens)" \
   "$(run measure PostToolUse)"
 
 export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 
-# --- config is user-supplied ---------------------------------------------------
+# --- the lists are user-supplied ----------------------------------------------
+# one_band <dir> <message>: a data dir whose two lists share a single band
+one_band() {
+  mkdir -p "$1"
+  printf '{"bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-on.json"
+  printf '{"bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-off.json"
+}
+
 new_session
 transcript_with 33000
-cat > "$tmp/custom.json" <<'JSON'
-{"bands": [{"at": 50, "message": "CUSTOM {used_percent}%"}]}
-JSON
+one_band "$tmp/custom" "CUSTOM {used_percent}%"
 check "設定の閾値と文面が使われる" "CUSTOM 66%" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/custom.json run measure PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/custom run measure PostToolUse)"
 
 # --- the remaining-room placeholders complement the used ones ------------------
 new_session
 transcript_with 33000
-cat > "$tmp/available.json" <<'JSON'
-{"bands": [{"at": 50, "message": "LEFT {available_tokens} tokens / {available_percent}% of {window_tokens}"}]}
-JSON
+one_band "$tmp/available" "LEFT {available_tokens} tokens / {available_percent}% of {window_tokens}"
 check "available_tokens / available_percent が展開される" \
   "LEFT 17,000 tokens / 34% of 50,000" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/available.json run measure PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/available run measure PostToolUse)"
 
-# --- /context-notify:config bootstraps the file --------------------------------
-cfgdir="$tmp/plugindata"
-out="$(CLAUDE_CONTEXT_NOTIFY_CONFIG= python3 "$script" config "$cfgdir")"
-check "config: 初回はテンプレから作成する" "テンプレから作成" "$out"
-# Asserted on the structure it prints, not on the shipped wording, which is the
-# user's to edit.
-check "config: 作成したファイルを読んで profile を決める" "profile: autocompact-" "$out"
+# --- which list a session reads ------------------------------------------------
+# Asserted through fixtures, not the shipped wording, which is the user's to edit.
+seldir="$tmp/select"
+mkdir -p "$seldir"
+printf '{"bands": [{"at": 50, "message": "ON {used_percent}%%"}]}' > "$seldir/autocompact-on.json"
+printf '{"bands": [{"at": 50, "message": "OFF {used_percent}%%"}]}' > "$seldir/autocompact-off.json"
+
+new_session
+transcript_with 33000
+printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
+  | python3 "$script" model
+check "auto compact が有効なら on ファイルを読む" "ON 66%" \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$seldir run measure PostToolUse)"
+
+new_session
+printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
+  | DISABLE_AUTO_COMPACT=1 python3 "$script" model
+check "state に検出結果が入る" '"enabled": false' \
+  "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
+check "auto compact が無効なら off ファイルを読む" "OFF 66%" \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$seldir run measure PostToolUse)"
+
+# --- the data dir is bootstrapped from the bundled templates -------------------
+bootdir="$tmp/plugindata"
+out="$(CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir")"
+check "config: 初回は 2 ファイルともテンプレから作成する" "テンプレから作成" "$out"
+check "config: どちらを使うかを示す" "このセッションが使うのは: autocompact-" "$out"
 check "config: 使えるプレースホルダを並べる" "{available_percent}" "$out"
-[[ -f "$cfgdir/config.json" ]] || { echo "NG: config file not created"; fails=$((fails + 1)); }
+for name in autocompact-on autocompact-off; do
+  [[ -f "$bootdir/$name.json" ]] || { echo "NG: $name.json not created"; fails=$((fails + 1)); }
+done
+
+# 既存ファイルは決して上書きしない
+printf '{"bands": [{"at": 50, "message": "MINE {used_percent}%%"}]}' > "$bootdir/autocompact-on.json"
+CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir" >/dev/null
+check "config: 既存ファイルは上書きしない" "MINE" "$(cat "$bootdir/autocompact-on.json")"
+
+# data dir が書けなくても同梱テンプレで動き続ける
+new_session
+transcript_with 33000
+check "data dir が作れなくても同梱テンプレで喋る" '"additionalContext"' \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=/dev/null/nope run measure PostToolUse)"
 
 # --- a typo in a placeholder must not break the session -----------------------
 new_session
 transcript_with 33000
-cat > "$tmp/typo.json" <<'JSON'
-{"bands": [{"at": 50, "message": "TYPO {pcnt}% {used_percent}%"}]}
-JSON
+one_band "$tmp/typo" "TYPO {pcnt}% {used_percent}%"
 check "未知のプレースホルダはそのまま残して喋る" "TYPO {pcnt}% 66%" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/typo.json run measure PostToolUse)"
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/typo run measure PostToolUse)"
 
-# A config left on the previous placeholder names must degrade to literal text,
+# A list left on the previous placeholder names must degrade to literal text,
 # never to an exception that breaks every turn of the session.
 new_session
 transcript_with 33000
-cat > "$tmp/oldnames.json" <<'JSON'
-{"bands": [{"at": 50, "message": "OLD {pct}% {used} {window}"}]}
-JSON
-check "旧名の config でも hook は落ちず文面がそのまま出る" "OLD {pct}% {used} {window}" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/oldnames.json run measure PostToolUse)"
+one_band "$tmp/oldnames" "OLD {pct}% {used} {window}"
+check "旧名の設定でも hook は落ちず文面がそのまま出る" "OLD {pct}% {used} {window}" \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/oldnames run measure PostToolUse)"
 
 # --- check role: validation for /context-notify:setup --------------------------
-check_role() { CLAUDE_CONTEXT_NOTIFY_CONFIG="$1" python3 "$script" check 2>&1 || true; }
+check_role() { CLAUDE_CONTEXT_NOTIFY_DATA="$1" python3 "$script" check 2>&1 || true; }
 
-check "check: 新名だけの bands は妥当" "設定は妥当です" "$(check_role "$tmp/bands.json")"
-check "check: 未知のプレースホルダを指摘" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo.json")"
+out="$(check_role "$fixture_dir")"
+check "check: 妥当な 2 ファイルを通す" "設定は妥当です" "$out"
+check "check: on 側も見る" "autocompact-on:" "$out"
+check "check: off 側も見る" "autocompact-off:" "$out"
+check "check: 片方だけの綴り間違いも拾う" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo")"
 
-cat > "$tmp/bad.json" <<'JSON'
-{"bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}
-JSON
-bad_out="$(check_role "$tmp/bad.json")"
+baddir="$tmp/baddata"
+mkdir -p "$baddir"
+printf '{"bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}' \
+  > "$baddir/autocompact-on.json"
+printf 'not json' > "$baddir/autocompact-off.json"
+bad_out="$(check_role "$baddir")"
 check "check: 昇順違反を指摘" "昇順になっていません" "$bad_out"
 check "check: 重複を指摘" "重複しています" "$bad_out"
 check "check: 空の文面を指摘" "空でない文字列" "$bad_out"
+check "check: 壊れた JSON を指摘" "JSON として読めません" "$bad_out"
 
-printf 'not json' > "$tmp/broken.json"
-check "check: 壊れた JSON を指摘" "JSON として読めません" "$(check_role "$tmp/broken.json")"
+nobands="$tmp/nobands"
+mkdir -p "$nobands"
+printf '{}' > "$nobands/autocompact-on.json"
+printf '{}' > "$nobands/autocompact-off.json"
+check "check: bands 欠落を指摘" "bands は 1 件以上の配列" "$(check_role "$nobands")"
 
-if CLAUDE_CONTEXT_NOTIFY_CONFIG="$tmp/bad.json" python3 "$script" check >/dev/null 2>&1; then
+noat="$tmp/noat"
+mkdir -p "$noat"
+printf '{"bands": [{"message": "x"}]}' > "$noat/autocompact-on.json"
+printf '{"bands": [{"message": "x"}]}' > "$noat/autocompact-off.json"
+check "check: at 欠落を指摘" "at は 1〜100 の整数" "$(check_role "$noat")"
+
+if CLAUDE_CONTEXT_NOTIFY_DATA="$baddir" python3 "$script" check >/dev/null 2>&1; then
   echo "NG: check は問題があれば非ゼロで終了すべき"
   fails=$((fails + 1))
 else
@@ -282,32 +334,6 @@ mkdir -p "$tmp/fakehome/.claude"
 printf '{"autoCompactEnabled": false}' > "$tmp/fakehome/.claude/.claude.json"
 check "検出: どちらも無ければ HOME/.claude を見る" '"enabled": false' \
   "$(unset CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE; HOME="$tmp/fakehome" detect)"
-
-# --- profile selection ---------------------------------------------------------
-# Which profile `auto` lands on is asserted through the name the config role
-# prints, so the shipped wording stays the user's to change.
-new_session
-transcript_with 33000
-printf '{"profile":"auto"}' > "$tmp/auto.json"
-printf '{"session_id":"s%s","hook_event_name":"SessionStart","model":"claude-x"}' "$sid" \
-  | DISABLE_AUTO_COMPACT=1 python3 "$script" model
-check "profile auto: bands 無しでも profile の帯で通知する" '"additionalContext"' \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json run measure PostToolUse)"
-check "profile auto: 無効なら off 側を選ぶ" "profile: autocompact-off" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json DISABLE_AUTO_COMPACT=1 \
-     python3 "$script" config)"
-check "state に検出結果が入る" '"enabled": false' "$(cat "$XDG_STATE_HOME/claude-context-notify/s$sid.json")"
-
-check "profile auto: 有効なら on 側を選ぶ" "profile: autocompact-on" \
-  "$(CLAUDE_CONTEXT_NOTIFY_CONFIG=$tmp/auto.json python3 "$script" config)"
-
-# --- check role: new fields ----------------------------------------------------
-printf '{"profile":"nope"}' > "$tmp/badprofile.json"
-check "check: 未知の profile を指摘" "profile は auto" "$(check_role "$tmp/badprofile.json")"
-printf '{"profile":"auto"}' > "$tmp/onlyprofile.json"
-check "check: bands 無しの profile 指定は妥当" "設定は妥当です" "$(check_role "$tmp/onlyprofile.json")"
-printf '{"bands": [{"message": "x"}]}' > "$tmp/noat.json"
-check "check: at 欠落を指摘" "at は 1〜100 の整数" "$(check_role "$tmp/noat.json")"
 
 echo
 if ((fails)); then

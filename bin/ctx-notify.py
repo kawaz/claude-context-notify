@@ -11,10 +11,11 @@ argv[1] is the role:
   measure  -- wire to Stop and PostToolUse. Reads usage, moves the latch, and
               speaks on the spot when the latch just moved up into a band.
   config   -- not a hook. Called by /context-notify:config with the plugin
-              data dir as argv[2]. Creates the config from the bundled
-              template if absent, then prints the path and the thresholds.
+              data dir as argv[2]. Creates the two notification lists from the
+              bundled templates if absent, then prints their paths and the
+              bands of the one this session uses.
   check    -- not a hook. Called by /context-notify:setup after editing.
-              Validates the config and exits non-zero if it has problems.
+              Validates both lists and exits non-zero if either has problems.
 
 stdin: hook JSON. stdout: hookSpecificOutput.additionalContext, or nothing.
 """
@@ -25,23 +26,24 @@ import string
 import sys
 
 DEFAULT_WINDOW = 200_000
-BUNDLED_CONFIG = pathlib.Path(__file__).resolve().parent.parent / "templates" / "config.json"
+TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "templates"
+LISTS = ("autocompact-on", "autocompact-off")
 
 
-def config_path(data_dir=None):
-    """Where the user's config lives, whether or not it exists yet.
+def data_dir(explicit=None):
+    """Where the user's notification lists live, whether or not they exist yet.
 
     CLAUDE_PLUGIN_DATA survives plugin updates, so it is the primary home.
     The XDG fallback keeps the script usable outside a plugin install.
     """
-    override = os.environ.get("CLAUDE_CONTEXT_NOTIFY_CONFIG")
+    override = os.environ.get("CLAUDE_CONTEXT_NOTIFY_DATA")
     if override:
         return pathlib.Path(override)
-    data = data_dir or os.environ.get("CLAUDE_PLUGIN_DATA")
+    data = explicit or os.environ.get("CLAUDE_PLUGIN_DATA")
     if data:
-        return pathlib.Path(data) / "config.json"
+        return pathlib.Path(data)
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return pathlib.Path(base) / "claude-context-notify" / "config.json"
+    return pathlib.Path(base) / "claude-context-notify"
 
 
 def load_json(path):
@@ -51,11 +53,30 @@ def load_json(path):
         return None
 
 
-PROFILES = ("autocompact-on", "autocompact-off")
+def list_name(info):
+    """Which of the two lists this session uses."""
+    return "autocompact-on" if (info or {}).get("enabled") else "autocompact-off"
 
 
-def profile_path(name):
-    return BUNDLED_CONFIG.parent / f"{name}.json"
+def list_path(name, dir_=None):
+    return data_dir(dir_) / f"{name}.json"
+
+
+def ensure_list(name, dir_=None):
+    """The user's copy of a list, created from the bundled template if absent.
+
+    An existing file is never touched. When the directory cannot be written,
+    the bundled template is returned instead so the session keeps working.
+    """
+    path = list_path(name, dir_)
+    if path.exists():
+        return path, False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text((TEMPLATES / f"{name}.json").read_text())
+    except OSError:
+        return TEMPLATES / f"{name}.json", False
+    return path, True
 
 
 def _bands_of(cfg):
@@ -78,27 +99,14 @@ def resolve_bands(entries):
     return bands
 
 
-def choose_profile(requested, info):
-    """Resolve `profile: auto` against what we detected. Unknown names fall back."""
-    if requested in PROFILES:
-        return requested, "設定で指定"
-    if info.get("enabled"):
-        return "autocompact-on", "auto compact は有効"
-    return "autocompact-off", "auto compact は無効"
-
-
-def load_config(path=None, info=None):
-    """The bands to use, plus how they were chosen.
-
-    Bands written in the config always win. Otherwise the profile decides, and
-    `auto` (the shipped default) picks one from what we detect.
-    """
-    cfg = load_json(path or config_path()) or load_json(BUNDLED_CONFIG) or {}
-    entries = _bands_of(cfg)
-    if entries:
-        return entries, ("custom", "設定に bands があるため")
-    chosen, why = choose_profile(cfg.get("profile", "auto"), info or {})
-    return _bands_of(load_json(profile_path(chosen)) or {}), (chosen, why)
+def load_bands(info=None, dir_=None):
+    """The bands for this session, plus the name of the list they came from."""
+    name = list_name(info)
+    path, _ = ensure_list(name, dir_)
+    entries = _bands_of(load_json(path) or {})
+    if not entries:
+        entries = _bands_of(load_json(TEMPLATES / f"{name}.json") or {})
+    return entries, name
 
 
 PLACEHOLDERS = (
@@ -190,25 +198,15 @@ def render(template, pct, used, window):
 
 
 def check_config(path):
-    """Problems with a config file, as a list of human-readable lines."""
+    """Problems with a notification list, as a list of human-readable lines."""
     raw = load_json(path)
     if raw is None:
         return [f"JSON として読めません: {path}"]
 
     problems = []
-    profile = raw.get("profile", "auto")
-    if profile not in PROFILES + ("auto",):
-        problems.append(
-            f"profile は auto / {' / '.join(PROFILES)} のいずれかにしてください "
-            f"(現在: {profile!r})"
-        )
-
     entries = raw.get("bands")
-    if entries is None:
-        # No bands means the profile supplies them, which is the shipped default.
-        return problems
     if not isinstance(entries, list) or not entries:
-        return problems + ["bands は 1 件以上の配列にしてください (profile に任せるなら丸ごと消す)"]
+        return ["bands は 1 件以上の配列にしてください"]
 
     seen = []
     for i, entry in enumerate(entries):
@@ -236,6 +234,17 @@ def check_config(path):
                     f"(使えるのは {', '.join('{%s}' % p for p in PLACEHOLDERS)})"
                 )
     return problems
+
+
+def check_all(dir_=None):
+    """Validate both lists. Returns the exit status the caller should use."""
+    status = 0
+    for name in LISTS:
+        path, created = ensure_list(name, dir_)
+        print(f"{name}: {path}" + ("  (テンプレから作成しました)" if created else ""))
+        status |= report_problems(check_config(path))
+        print()
+    return status
 
 
 def _placeholder_names(template):
@@ -438,18 +447,14 @@ def measure(ev, entries):
         return render(bands[band], pct=pct, used=used, window=win)
 
 
-def show_config(data_dir, session_id=None):
-    """Create the config from the template if absent, then describe it."""
-    path = config_path(data_dir)
-    created = False
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(BUNDLED_CONFIG.read_text())
-        created = True
-    print(f"config: {path}" + ("  (テンプレから作成しました)" if created else ""))
+def show_config(dir_=None, session_id=None):
+    """Create the two lists from the templates if absent, then describe them."""
+    for name in LISTS:
+        path, created = ensure_list(name, dir_)
+        print(f"{name}: {path}" + ("  (テンプレから作成しました)" if created else ""))
     info = detect_autocompact()
     print(describe_autocompact(info))
-    entries, (profile, why) = load_config(path, info)
+    entries, chosen = load_bands(info, dir_)
     # Percentages mean different token counts per window, so show the bands
     # against this session's own window when we know it.
     st = load(state_path(session_id)) if session_id else {}
@@ -464,19 +469,19 @@ def show_config(data_dir, session_id=None):
         window, window_from = env_window(), "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
     else:
         window, window_from = DEFAULT_WINDOW, "既定"
-    print(f"profile: {profile}  ({why})")
+    print(f"このセッションが使うのは: {chosen}")
     for entry in entries:
         at = entry.get("at")
         label = f"{at:>3}%" if isinstance(at, int) else "  ?%"
         print(f"  {label}  {entry.get('message', '')}")
     print(f"\n(帯は window {window:,} tokens = {window_from}の値 を基準に表示しています)")
-    print("このファイルを編集すると閾値と文面を変えられます。")
+    print("上の 2 ファイルを編集すると閾値と文面を変えられます。")
     print(
         "プレースホルダ: {used_tokens} 使用トークン / {used_percent} 使用率 / "
         "{available_tokens} 残りトークン / {available_percent} 残り % / "
         "{window_tokens} window"
     )
-    report_problems(check_config(path))
+    report_problems(check_config(list_path(chosen, dir_)))
 
 
 def describe_autocompact(info):
@@ -504,14 +509,12 @@ def main():
         arg = sys.argv[2] if len(sys.argv) > 2 else ""
         # The caller passes ${CLAUDE_PLUGIN_DATA}; an unexpanded template means
         # we are not running under a plugin install, so fall back to XDG.
-        data_dir = arg if arg and "${" not in arg else None
+        dir_ = arg if arg and "${" not in arg else None
         sid_arg = sys.argv[3] if len(sys.argv) > 3 else ""
         session_id = sid_arg if sid_arg and "${" not in sid_arg else None
         if role == "check":
-            path = config_path(data_dir)
-            print(f"config: {path}")
-            sys.exit(report_problems(check_config(path)))
-        show_config(data_dir, session_id)
+            sys.exit(check_all(dir_))
+        show_config(dir_, session_id)
         return
 
     try:
@@ -526,7 +529,7 @@ def main():
         remember_window(ev)
         return
 
-    bands, _profile = load_config(info=load(state_path(sid)).get("autocompact"))
+    bands, _chosen = load_bands(load(state_path(sid)).get("autocompact"))
     if not bands:
         return
 

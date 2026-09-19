@@ -109,9 +109,9 @@ read だけなので、event ごとに走らせても問題にならない。
 
 ### 6. 閾値と文面はユーザ設定
 
-`${CLAUDE_PLUGIN_DATA}/config.json` (plugin update で保持される) に置き、無ければ
-同梱の `templates/config.json` を既定として読む。形式は JSON — python 標準ライブラリ
-だけで読め、`jq` で lint できる。
+`${CLAUDE_PLUGIN_DATA}` (plugin update で保持される) に置く通知リスト 2 ファイルが
+正本で、無ければ同梱の `templates/<name>.json` を複製する (構成は DR-0002)。形式は
+JSON — python 標準ライブラリだけで読め、`jq` で lint できる。
 
 編集の入口は 2 本に分ける。`/context-notify:config` は**ユーザ専用**
 (`disable-model-invocation: true`) で、初回の複製とパス表示だけを担い編集はしない。
