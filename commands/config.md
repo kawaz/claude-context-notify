@@ -24,6 +24,7 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 (出力にはどちらが選ばれるかも含まれる)。両方を同じ内容にすれば、有効 / 無効に
 関わらず同じ通知になる。
 
-形式は `bands` (`at` = 閾値 %、`message` = 文面) のみ。文面では `{used_tokens}` /
+形式は `version` (形式のバージョン) と `bands` (`at` = 閾値 %、`message` = 文面) のみ。
+同じ `at` を複数書くと、その文面は改行で連結されて 1 回の通知になる。文面では `{used_tokens}` /
 `{used_percent}` / `{available_tokens}` / `{available_percent}` / `{window_tokens}`
 が使える。

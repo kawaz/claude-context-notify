@@ -20,7 +20,7 @@ unset CLAUDE_PLUGIN_DATA || true
 # cases do not depend on which one is selected.
 fixture_dir="$tmp/data"
 mkdir -p "$fixture_dir"
-bands_body='{"bands": [
+bands_body='{"version": 1, "bands": [
   {"at": 20, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
   {"at": 40, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
   {"at": 60, "message": "PREFIXctx {used_percent}% ({used_tokens} / {window_tokens} tokens)"},
@@ -62,6 +62,9 @@ run() {
 }
 
 new_session() { sid=$((sid + 1)); }
+
+# check_role <data dir>: the check role's report for that dir
+check_role() { CLAUDE_CONTEXT_NOTIFY_DATA="$1" python3 "$script" check 2>&1 || true; }
 
 # check <label> <expected: SILENT|substring> <actual>
 check() {
@@ -162,8 +165,8 @@ export CLAUDE_CONTEXT_WINDOW_TOKENS=50000
 # one_band <dir> <message>: a data dir whose two lists share a single band
 one_band() {
   mkdir -p "$1"
-  printf '{"bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-on.json"
-  printf '{"bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-off.json"
+  printf '{"version": 1, "bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-on.json"
+  printf '{"version": 1, "bands": [{"at": 50, "message": "%s"}]}' "$2" > "$1/autocompact-off.json"
 }
 
 new_session
@@ -180,12 +183,44 @@ check "available_tokens / available_percent が展開される" \
   "LEFT 17,000 tokens / 34% of 50,000" \
   "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/available run measure PostToolUse)"
 
+# --- entries sharing an `at` join into one notice ------------------------------
+new_session
+transcript_with 33000
+dupdir="$tmp/dup"
+mkdir -p "$dupdir"
+for f in autocompact-on autocompact-off; do
+  printf '{"version": 1, "bands": [{"at": 50, "message": "FIRST {used_percent}%%"}, {"at": 50, "message": "SECOND"}]}' \
+    > "$dupdir/$f.json"
+done
+check "同じ at の 2 エントリが改行で連結されて 1 回出る" 'FIRST 66%\nSECOND' \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$dupdir run measure PostToolUse)"
+check "同じ at を check は許容する" "設定は妥当です" \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$dupdir python3 "$script" check 2>&1 || true)"
+
+# --- the schema version is announced, never migrated ---------------------------
+verdir="$tmp/version"
+mkdir -p "$verdir"
+for f in autocompact-on autocompact-off; do
+  printf '{"bands": [{"at": 50, "message": "NOVER {used_percent}%%"}]}' > "$verdir/$f.json"
+done
+check "check: version 欠落を指摘" "version が古い (ファイル: None / 現在: 1)" \
+  "$(check_role "$verdir")"
+printf '{"version": 0, "bands": [{"at": 50, "message": "OLDVER"}]}' > "$verdir/autocompact-on.json"
+check "check: version 不一致を指摘" "version が古い (ファイル: 0 / 現在: 1)" \
+  "$(check_role "$verdir")"
+check "check: version 一致なら言及しない" SILENT \
+  "$(check_role "$fixture_dir" | grep 'version が古い' || true)"
+new_session
+transcript_with 33000
+check "version が古くても hook は bands を使い続ける" "NOVER 66%" \
+  "$(CLAUDE_CONTEXT_NOTIFY_DATA=$verdir run measure PostToolUse)"
+
 # --- which list a session reads ------------------------------------------------
 # Asserted through fixtures, not the shipped wording, which is the user's to edit.
 seldir="$tmp/select"
 mkdir -p "$seldir"
-printf '{"bands": [{"at": 50, "message": "ON {used_percent}%%"}]}' > "$seldir/autocompact-on.json"
-printf '{"bands": [{"at": 50, "message": "OFF {used_percent}%%"}]}' > "$seldir/autocompact-off.json"
+printf '{"version": 1, "bands": [{"at": 50, "message": "ON {used_percent}%%"}]}' > "$seldir/autocompact-on.json"
+printf '{"version": 1, "bands": [{"at": 50, "message": "OFF {used_percent}%%"}]}' > "$seldir/autocompact-off.json"
 
 new_session
 transcript_with 33000
@@ -213,7 +248,7 @@ for name in autocompact-on autocompact-off; do
 done
 
 # 既存ファイルは決して上書きしない
-printf '{"bands": [{"at": 50, "message": "MINE {used_percent}%%"}]}' > "$bootdir/autocompact-on.json"
+printf '{"version": 1, "bands": [{"at": 50, "message": "MINE {used_percent}%%"}]}' > "$bootdir/autocompact-on.json"
 CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir" >/dev/null
 check "config: 既存ファイルは上書きしない" "MINE" "$(cat "$bootdir/autocompact-on.json")"
 
@@ -239,7 +274,6 @@ check "旧名の設定でも hook は落ちず文面がそのまま出る" "OLD 
   "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/oldnames run measure PostToolUse)"
 
 # --- check role: validation for /context-notify:setup --------------------------
-check_role() { CLAUDE_CONTEXT_NOTIFY_DATA="$1" python3 "$script" check 2>&1 || true; }
 
 out="$(check_role "$fixture_dir")"
 check "check: 妥当な 2 ファイルを通す" "設定は妥当です" "$out"
@@ -249,25 +283,24 @@ check "check: 片方だけの綴り間違いも拾う" "未知のプレースホ
 
 baddir="$tmp/baddata"
 mkdir -p "$baddir"
-printf '{"bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}' \
+printf '{"version": 1, "bands": [{"at": 60, "message": "a"}, {"at": 20, "message": "b"}, {"at": 20, "message": ""}]}' \
   > "$baddir/autocompact-on.json"
 printf 'not json' > "$baddir/autocompact-off.json"
 bad_out="$(check_role "$baddir")"
 check "check: 昇順違反を指摘" "昇順になっていません" "$bad_out"
-check "check: 重複を指摘" "重複しています" "$bad_out"
 check "check: 空の文面を指摘" "空でない文字列" "$bad_out"
 check "check: 壊れた JSON を指摘" "JSON として読めません" "$bad_out"
 
 nobands="$tmp/nobands"
 mkdir -p "$nobands"
-printf '{}' > "$nobands/autocompact-on.json"
-printf '{}' > "$nobands/autocompact-off.json"
+printf '{"version": 1}' > "$nobands/autocompact-on.json"
+printf '{"version": 1}' > "$nobands/autocompact-off.json"
 check "check: bands 欠落を指摘" "bands は 1 件以上の配列" "$(check_role "$nobands")"
 
 noat="$tmp/noat"
 mkdir -p "$noat"
-printf '{"bands": [{"message": "x"}]}' > "$noat/autocompact-on.json"
-printf '{"bands": [{"message": "x"}]}' > "$noat/autocompact-off.json"
+printf '{"version": 1, "bands": [{"message": "x"}]}' > "$noat/autocompact-on.json"
+printf '{"version": 1, "bands": [{"message": "x"}]}' > "$noat/autocompact-off.json"
 check "check: at 欠落を指摘" "at は 1〜100 の整数" "$(check_role "$noat")"
 
 if CLAUDE_CONTEXT_NOTIFY_DATA="$baddir" python3 "$script" check >/dev/null 2>&1; then

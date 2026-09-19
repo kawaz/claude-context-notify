@@ -55,9 +55,9 @@ Open the file yourself with `config`, or ask in words with `setup`:
 /context-notify:setup            # no argument: shows the current bands and asks what to change
 ```
 
-After editing, `setup` runs `ctx-notify.py check`, which verifies both files — the JSON, the thresholds
-(integers 1–100, ascending, no duplicates), the presence of messages, and the spelling of
-every placeholder.
+After editing, `setup` runs `ctx-notify.py check`, which verifies both files — the JSON, the
+schema version, the thresholds (integers 1–100, ascending), the presence of messages, and the
+spelling of every placeholder.
 
 ### Adapting to auto-compact
 
@@ -92,6 +92,7 @@ Both files have the same shape:
 
 ```json
 {
+  "version": 1,
   "bands": [
     { "at": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
     { "at": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
@@ -99,7 +100,11 @@ Both files have the same shape:
 }
 ```
 
-- `bands[].at` — the threshold, in percent. Any number of bands, in any order.
+- `version` — the schema version these files are written against. `check` says so when it
+  does not match the current one; nothing is migrated or overwritten for you.
+- `bands[].at` — the threshold, in percent. Any number of bands, in ascending order.
+  Several entries may share an `at`; their messages are joined with newlines and delivered
+  as the single notice for that crossing.
 - `bands[].message` — what the session is told. `{used_tokens}` (tokens used),
   `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
   `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted.

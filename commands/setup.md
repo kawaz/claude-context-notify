@@ -37,7 +37,7 @@ $ARGUMENTS
    "${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" check "${CLAUDE_PLUGIN_DATA}"
    ```
 
-   これが JSON の妥当性・閾値 (1〜100 の整数、昇順、重複なし)・文面の有無・
+   これが JSON の妥当性・version・閾値 (1〜100 の整数、昇順)・文面の有無・
    プレースホルダの綴りをまとめて見る。**問題が報告されたら直して、通るまで繰り返す。**
 
 5. 変更前後の差分を要約して報告する (どのファイルのどの閾値をどう変えたか、文面は
@@ -48,6 +48,7 @@ $ARGUMENTS
 
 ```json
 {
+  "version": 1,
   "bands": [
     { "at": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
     { "at": 90, "message": "Context at {used_percent}%, {available_tokens} tokens left. Do not start new work; begin the handoff." }
@@ -57,7 +58,9 @@ $ARGUMENTS
 
 - `autocompact-on.json` — auto compact が有効なセッションで使う帯と文面
 - `autocompact-off.json` — 無効なセッションで使う帯と文面
-- `bands[].at` — 閾値 (%)。1〜100 の整数、昇順、重複なし。個数は自由
+- `version` — 形式のバージョン。現行と違えば `check` が知らせる (自分で移行しない)
+- `bands[].at` — 閾値 (%)。1〜100 の整数、昇順。個数は自由。同じ `at` を複数書くと
+  文面が改行で連結されて 1 回の通知になる
 - `bands[].message` — 跨いだ時にセッションへ注入する文面
 - 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /

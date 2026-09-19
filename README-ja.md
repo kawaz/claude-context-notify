@@ -54,8 +54,8 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 /context-notify:setup            # 引数なし = 現在値を見せて「何を変えますか」と聞く
 ```
 
-`setup` は書き換えたあとに `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・閾値
-(1〜100 の整数、昇順、重複なし)・文面の有無・プレースホルダの綴りを機械的に検査する。
+`setup` は書き換えたあとに `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・
+version・閾値 (1〜100 の整数、昇順)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
 ### auto compact の有効 / 無効でテンプレを切り替える
 
@@ -88,6 +88,7 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 
 ```json
 {
+  "version": 1,
   "bands": [
     { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
     { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
@@ -95,7 +96,10 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 }
 ```
 
-- `bands[].at` — 閾値 (%)。個数も順序も自由
+- `version` — このファイルが従う形式のバージョン。現行と違えば `check` が知らせる
+  (自動移行も上書きもしない)
+- `bands[].at` — 閾値 (%)。個数は自由、昇順で書く。同じ `at` を複数書くと、その文面が
+  改行で連結されて 1 回の通知としてまとめて出る
 - `bands[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
   `{window_tokens}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、

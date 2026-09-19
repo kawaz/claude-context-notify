@@ -26,6 +26,7 @@ import string
 import sys
 
 DEFAULT_WINDOW = 200_000
+CONFIG_VERSION = 1
 TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "templates"
 LISTS = ("autocompact-on", "autocompact-off")
 
@@ -84,7 +85,11 @@ def _bands_of(cfg):
 
 
 def resolve_bands(entries):
-    """Turn band entries into {percent: message}."""
+    """Turn band entries into {percent: message}.
+
+    Several entries may share an `at`; their messages join with newlines in the
+    order they are written, so crossing the band still speaks exactly once.
+    """
     bands = {}
     for entry in entries:
         message = entry.get("message")
@@ -95,7 +100,7 @@ def resolve_bands(entries):
         except (TypeError, ValueError):
             continue
         if 0 < at <= 100:
-            bands[at] = message
+            bands[at] = f"{bands[at]}\n{message}" if at in bands else message
     return bands
 
 
@@ -204,9 +209,16 @@ def check_config(path):
         return [f"JSON として読めません: {path}"]
 
     problems = []
+    version = raw.get("version")
+    if version != CONFIG_VERSION:
+        problems.append(
+            f"version が古い (ファイル: {version!r} / 現在: {CONFIG_VERSION})。"
+            f"テンプレ templates/{path.stem}.json を参考に書き直してください"
+        )
+
     entries = raw.get("bands")
     if not isinstance(entries, list) or not entries:
-        return ["bands は 1 件以上の配列にしてください"]
+        return problems + ["bands は 1 件以上の配列にしてください"]
 
     seen = []
     for i, entry in enumerate(entries):
@@ -218,8 +230,8 @@ def check_config(path):
         if not isinstance(at, int) or isinstance(at, bool) or not 1 <= at <= 100:
             problems.append(f"{where}.at は 1〜100 の整数にしてください (現在: {at!r})")
         else:
-            if at in seen:
-                problems.append(f"{where}.at = {at} が重複しています")
+            # Entries may share an `at` (their messages join); only a step back
+            # in the order is a mistake.
             if seen and at < seen[-1]:
                 problems.append(f"{where}.at = {at} が昇順になっていません (前は {seen[-1]})")
             seen.append(at)
