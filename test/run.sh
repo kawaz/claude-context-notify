@@ -312,8 +312,14 @@ check "旧名の設定でも hook は落ちず文面がそのまま出る" "OLD 
 
 out="$(check_role "$fixture_dir")"
 check "check: 妥当な 2 ファイルを通す" "設定は妥当です" "$out"
-check "check: on 側も見る" "autocompact-on:" "$out"
-check "check: off 側も見る" "autocompact-off:" "$out"
+check "check: 妥当なら 1 行だけ (パス行を繰り返さない)" "" \
+  "$(printf %s "$out" | grep -c 'autocompact-o' | sed s/^0$//)"
+sidedir="$tmp/oneside"
+one_band "$sidedir" "OK {used_percent}%"
+printf '{"version": 1, "notifications": [{"used_percent": 50, "message": "{pcnt}"}]}' > "$sidedir/autocompact-off.json"
+side_out="$(check_role "$sidedir")"
+check "check: 問題のあるファイル名を各行に含める" "autocompact-off: notifications[0].message: 未知のプレースホルダ {pcnt}" "$side_out"
+check "check: 問題の無い側は列挙しない" "" "$(printf %s "$side_out" | grep -c 'autocompact-on:' | sed s/^0$//)"
 check "check: 片方だけの綴り間違いも拾う" "未知のプレースホルダ {pcnt}" "$(check_role "$tmp/typo")"
 
 baddir="$tmp/baddata"

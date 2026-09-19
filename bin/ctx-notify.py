@@ -249,14 +249,12 @@ def check_config(path):
 
 
 def check_all(dir_=None):
-    """Validate both lists. Returns the exit status the caller should use."""
-    status = 0
+    """Validate both lists as one verdict. Returns the exit status to use."""
+    problems = []
     for name in LISTS:
-        path, created = ensure_list(name, dir_)
-        print(f"{name}: {path}" + ("  (テンプレから作成しました)" if created else ""))
-        status |= report_problems(check_config(path))
-        print()
-    return status
+        path, _ = ensure_list(name, dir_)
+        problems += [f"{name}: {p}" for p in check_config(path)]
+    return report_problems(problems)
 
 
 def _placeholder_names(template):

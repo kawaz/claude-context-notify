@@ -43,7 +43,7 @@ plugin updates: `autocompact-on.json` and `autocompact-off.json`. One command re
 
 | Command | What it does |
 |---|---|
-| `/context-notify:config [request]` | Copies the bundled templates on first run, then prints both paths and, verbatim, the file this session reads. Given a request, rewrites the lists to match it, validates them, and reports the diff |
+| `/context-notify:config [request]` | Copies the bundled templates on first run, then shows you both paths and the file this session reads, in your language, and offers to edit (or translate the default wording) on request. Given a request, rewrites the lists to match it, validates them, and reports the diff |
 
 Read them, or ask in words:
 
