@@ -197,6 +197,27 @@ check "同じ used_percent の 2 エントリが改行で連結されて 1 回�
 check "同じ used_percent を check は許容する" "設定は妥当です" \
   "$(CLAUDE_CONTEXT_NOTIFY_DATA=$dupdir python3 "$script" check 2>&1 || true)"
 
+# --- a 0 entry fires once, on the session's first measurement ------------------
+zerodir="$tmp/zero"
+mkdir -p "$zerodir"
+for f in autocompact-on autocompact-off; do
+  printf '{"version": 1, "notifications": [{"used_percent": 0, "message": "ZERO {used_percent}%%"}, {"used_percent": 60, "message": "SIXTY"}]}' \
+    > "$zerodir/$f.json"
+done
+zero_run() { CLAUDE_CONTEXT_NOTIFY_DATA="$zerodir" run measure PostToolUse; }
+
+new_session
+transcript_with 5000    # 10%
+check "used_percent 0: 最初の測定で出る" "ZERO 10%" "$(zero_run)"
+check "used_percent 0: 2 回目の測定では出ない" SILENT "$(zero_run)"
+transcript_with 33000   # 66%
+check "used_percent 0: 上の帯は普通に出る" "SIXTY" "$(zero_run)"
+transcript_with 5000    # compact 相当で 10% へ
+check "used_percent 0: 下がった時は黙る" SILENT "$(zero_run)"
+transcript_with 6000    # 12%、0 帯のまま
+check "used_percent 0: 戻っても 0 は再発火しない" SILENT "$(zero_run)"
+check "check: 0 の閾値を許容する" "設定は妥当です" "$(check_role "$zerodir")"
+
 # --- the schema version is announced, never migrated ---------------------------
 verdir="$tmp/version"
 mkdir -p "$verdir"
@@ -301,7 +322,7 @@ noat="$tmp/noat"
 mkdir -p "$noat"
 printf '{"version": 1, "notifications": [{"message": "x"}]}' > "$noat/autocompact-on.json"
 printf '{"version": 1, "notifications": [{"message": "x"}]}' > "$noat/autocompact-off.json"
-check "check: used_percent 欠落を指摘" "used_percent は 1〜100 の整数" "$(check_role "$noat")"
+check "check: used_percent 欠落を指摘" "used_percent は 0〜100 の整数" "$(check_role "$noat")"
 
 if CLAUDE_CONTEXT_NOTIFY_DATA="$baddir" python3 "$script" check >/dev/null 2>&1; then
   echo "NG: check は問題があれば非ゼロで終了すべき"

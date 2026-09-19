@@ -71,11 +71,15 @@ plugin data dir (`${CLAUDE_PLUGIN_DATA}`、無ければ
 | `autocompact-on.json` | auto compact が有効 |
 | `autocompact-off.json` | auto compact が無効 |
 
-形式は `{"version": <整数>, "notifications": [{"used_percent": <1〜100 の整数>, "message": "<文面>"}, ...]}` のみ。
+形式は `{"version": <整数>, "notifications": [{"used_percent": <0〜100 の整数>, "message": "<文面>"}, ...]}` のみ。
 `version` は形式そのもののバージョンで、スクリプト側の定数と一致しなければ `config` /
 `check` が 1 行で知らせる。**自動移行も上書きもしない** — 利用者が書いた文面を plugin が
 書き換えないという性質のほうが、移行の手間より重い。hook 側は落とさず `notifications` を
 読める範囲で使い続ける。
+
+`used_percent: 0` はセッション最初の測定で 1 回だけ出る。latch が未設定の状態を「未測定」
+として 0 の帯と区別することで成り立つ (= compact で latch が 0 に戻った後の再上昇では
+0 を跨いだ扱いにしない)。セッション冒頭に一度だけ読ませたい前置きを置く場所になる。
 
 同じ `used_percent` を複数書いてよい。その文面はファイル内の順序で改行連結され、帯を跨いだ 1 回の
 通知としてまとめて出る (= latch の意味は「帯を 1 回だけ喋る」のまま)。

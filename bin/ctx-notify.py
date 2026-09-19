@@ -99,7 +99,7 @@ def resolve_bands(entries):
             at = int(entry.get("used_percent"))
         except (TypeError, ValueError):
             continue
-        if 0 < at <= 100:
+        if 0 <= at <= 100:
             bands[at] = f"{bands[at]}\n{message}" if at in bands else message
     return bands
 
@@ -227,9 +227,9 @@ def check_config(path):
             problems.append(f"{where}: オブジェクトにしてください")
             continue
         at = entry.get("used_percent")
-        if not isinstance(at, int) or isinstance(at, bool) or not 1 <= at <= 100:
+        if not isinstance(at, int) or isinstance(at, bool) or not 0 <= at <= 100:
             problems.append(
-                f"{where}.used_percent は 1〜100 の整数にしてください (現在: {at!r})"
+                f"{where}.used_percent は 0〜100 の整数にしてください (現在: {at!r})"
             )
         else:
             # Entries may share a `used_percent` (their messages join); only a
@@ -451,7 +451,10 @@ def measure(ev, entries):
     pct = round(used * 100 / win)
     band = band_of(pct, bands)
 
-    prev = st.get("band", 0)
+    # No latch yet means nothing has been measured in this session, which is
+    # what makes a 0 band reachable: it is crossed by the first measurement.
+    prev = st.get("band")
+    prev = -1 if prev is None else prev
     if band == prev:
         return
 

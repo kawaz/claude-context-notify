@@ -26,6 +26,6 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py:*)
 
 形式は `version` (形式のバージョン) と `notifications` (`used_percent` = 閾値 %、
 `message` = 文面) のみ。同じ `used_percent` を複数書くと、その文面は改行で連結されて
-1 回の通知になる。文面では `{used_tokens}` /
+1 回の通知になる。`used_percent: 0` はセッション最初の応答後に 1 回出る。文面では `{used_tokens}` /
 `{used_percent}` / `{available_tokens}` / `{available_percent}` / `{window_tokens}`
 が使える。

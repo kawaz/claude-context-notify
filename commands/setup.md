@@ -37,7 +37,7 @@ $ARGUMENTS
    "${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" check "${CLAUDE_PLUGIN_DATA}"
    ```
 
-   これが JSON の妥当性・version・閾値 (1〜100 の整数、昇順)・文面の有無・
+   これが JSON の妥当性・version・閾値 (0〜100 の整数、昇順)・文面の有無・
    プレースホルダの綴りをまとめて見る。**問題が報告されたら直して、通るまで繰り返す。**
 
 5. 変更前後の差分を要約して報告する (どのファイルのどの閾値をどう変えたか、文面は
@@ -59,8 +59,9 @@ $ARGUMENTS
 - `autocompact-on.json` — auto compact が有効なセッションで使う帯と文面
 - `autocompact-off.json` — 無効なセッションで使う帯と文面
 - `version` — 形式のバージョン。現行と違えば `check` が知らせる (自分で移行しない)
-- `notifications[].used_percent` — 閾値 (%)。1〜100 の整数、昇順。個数は自由。同じ値を
-  複数書くと文面が改行で連結されて 1 回の通知になる
+- `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、昇順。個数は自由。同じ値を
+  複数書くと文面が改行で連結されて 1 回の通知になる。`0` はセッション最初の応答後に
+  1 回出る
 - `notifications[].message` — 跨いだ時にセッションへ注入する文面
 - 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
