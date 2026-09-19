@@ -14,13 +14,17 @@ $ARGUMENTS
 
 ### 手順
 
-1. 次のコマンドを **1 回だけ**実行する (出力はユーザに見せる素材。そのまま貼るのではなく、下の 2 で伝える)。
+1. 下の「現在の設定」ブロックが素材 (invoke 時に埋め込まれる。そのまま貼るのではなく、下の 2 で伝える)。ブロックが空か `[shell command execution disabled by policy]` になっていたら、代わりに次を **1 回だけ**実行して同じ出力を得る:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" config "${CLAUDE_PLUGIN_DATA}"
    ```
 
    出力の `autocompact-on:` / `autocompact-off:` 行が 2 ファイルのパス、`このセッションが使うのは:` がこのセッションに適用される側、その下に出るのが適用される側のファイルの中身、末尾が 2 ファイルの検証結果。
+
+   現在の設定:
+
+   !`"${CLAUDE_PLUGIN_ROOT}/bin/ctx-notify.py" config "${CLAUDE_PLUGIN_DATA}"`
 
 2. **ユーザの言語で**次を伝える (出力の日本語ラベルを訳して使う。文面は自分の言葉でよい):
    - 通知リストは 2 ファイルあること、それぞれのパス、このセッションに適用されるのはどちらか (auto compact が有効なら on、無効なら off)
