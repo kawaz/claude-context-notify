@@ -4,7 +4,6 @@ active な issue の一覧。close 済みは archive/ にあり、ここには�
 
 | date | category | status | slug | 概要 |
 |---|---|---|---|---|
-| 2026-09-19 | bug | open | [hook-may-ignore-plugin-data-config](./2026-09-19-hook-may-ignore-plugin-data-config.md) | hooks.json の measure/model が data dir を引数で渡さず env var だけに依存している疑い |
 
 <!--
 INDEX の列構成・canonical 順序・行形式の唯一の正本:

@@ -1,6 +1,6 @@
 ---
 title: hook が CLAUDE_PLUGIN_DATA 未到達時に setup の config 変更を無視する可能性
-status: open
+status: resolved
 category: bug
 created: 2026-09-19T17:31:37+09:00
 last_read:
@@ -9,10 +9,10 @@ wip_entered:
 blocked_entered:
 pending_entered:
 discarded_entered:
-resolved_entered:
+resolved_entered: 2026-09-19T17:49:28+09:00
 discard_reason:
 pending_reason:
-close_reason:
+close_reason: ["done:該当せず。claude v2.1.272 は CLAUDE_PLUGIN_ROOT を付ける同じ分岐で CLAUDE_PLUGIN_DATA も plugin hook に渡す（届かないのは settings.json 直書き hook と skill hook のみ）。fa130b5 以降は hook/command とも同じ data dir 解決 (CLAUDE_PLUGIN_DATA → XDG fallback) を通る"]
 blocked_by:
 origin: sandbox-jev
 ---
