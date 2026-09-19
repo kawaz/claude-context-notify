@@ -224,7 +224,6 @@ def check_config(path):
     if not isinstance(entries, list) or not entries:
         return problems + ["notifications は 1 件以上の配列にしてください"]
 
-    seen = []
     for i, entry in enumerate(entries):
         where = f"notifications[{i}]"
         if not isinstance(entry, dict):
@@ -235,14 +234,6 @@ def check_config(path):
             problems.append(
                 f"{where}.used_percent は 0〜100 の整数にしてください (現在: {at!r})"
             )
-        else:
-            # Entries may share a `used_percent` (their messages join); only a
-            # step back in the order is a mistake.
-            if seen and at < seen[-1]:
-                problems.append(
-                    f"{where}.used_percent = {at} が昇順になっていません (前は {seen[-1]})"
-                )
-            seen.append(at)
         msg = entry.get("message")
         if not isinstance(msg, str) or not msg.strip():
             problems.append(f"{where}.message は空でない文字列にしてください")

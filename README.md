@@ -56,7 +56,7 @@ Open the file yourself with `config`, or ask in words with `setup`:
 ```
 
 After editing, `setup` runs `ctx-notify.py check`, which verifies both files — the JSON, the
-schema version, the thresholds (integers 0–100, ascending), the presence of messages, and the
+schema version, the thresholds (integers 0–100), the presence of messages, and the
 spelling of every placeholder.
 
 ### Adapting to auto-compact
@@ -103,7 +103,7 @@ Both files have the same shape:
 - `version` — the schema version these files are written against. `check` says so when it
   does not match the current one; nothing is migrated or overwritten for you.
 - `notifications[].used_percent` — the threshold, in percent (0–100). Any number of entries,
-  in ascending order. An entry at `0` is delivered once, after the session's first response. Several entries may share a `used_percent`; their messages are joined with
+  in any order (entries are grouped by value; within a value, file order is kept). An entry at `0` is delivered once, after the session's first response. Several entries may share a `used_percent`; their messages are joined with
   newlines and delivered as the single notice for that crossing.
 - `notifications[].message` — what the session is told. `{used_tokens}` (tokens used),
   `{used_percent}` (usage percent), `{available_tokens}` (tokens left),

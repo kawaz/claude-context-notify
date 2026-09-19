@@ -314,7 +314,7 @@ printf '{"version": 1, "notifications": [{"used_percent": 60, "message": "a"}, {
   > "$baddir/autocompact-on.json"
 printf 'not json' > "$baddir/autocompact-off.json"
 bad_out="$(check_role "$baddir")"
-check "check: 昇順違反を指摘" "昇順になっていません" "$bad_out"
+check "check: 並び順は問わない" "" "$(printf %s "$bad_out" | grep -c 昇順 | sed s/^0$//)"
 check "check: 空の文面を指摘" "空でない文字列" "$bad_out"
 check "check: 壊れた JSON を指摘" "JSON として読めません" "$bad_out"
 

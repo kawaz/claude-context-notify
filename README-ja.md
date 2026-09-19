@@ -55,7 +55,7 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 ```
 
 `setup` は書き換えたあとに `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・
-version・閾値 (0〜100 の整数、昇順)・文面の有無・プレースホルダの綴りを機械的に検査する。
+version・閾値 (0〜100 の整数)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
 ### auto compact の有効 / 無効でテンプレを切り替える
 
@@ -98,7 +98,7 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 
 - `version` — このファイルが従う形式のバージョン。現行と違えば `check` が知らせる
   (自動移行も上書きもしない)
-- `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、個数は自由、昇順で書く。
+- `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、個数は自由、並び順は問わない (値ごとにまとまり、同じ値の中ではファイル内の順)。
   `used_percent: 0` はセッション最初の応答後に 1 回出る。同じ `used_percent`
   を複数書くと、その文面が改行で連結されて 1 回の通知としてまとめて出る
 - `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
