@@ -258,6 +258,12 @@ check "state に検出結果が入る" '"enabled": false' \
 check "auto compact が無効なら off ファイルを読む" "OFF 66%" \
   "$(CLAUDE_CONTEXT_NOTIFY_DATA=$seldir run measure PostToolUse)"
 
+# --- a hook lays down both lists, not only the one it reads -------------------
+hookboot="$tmp/hookboot"
+CLAUDE_CONTEXT_NOTIFY_DATA=$hookboot run measure PostToolUse >/dev/null
+check "hook: 読まない側のリストもテンプレから作られる" "autocompact-on.json autocompact-off.json" \
+  "$(ls "$hookboot" | sort -r | tr '\n' ' ' | sed 's/ $//')"
+
 # --- the data dir is bootstrapped from the bundled templates -------------------
 bootdir="$tmp/plugindata"
 out="$(CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir")"

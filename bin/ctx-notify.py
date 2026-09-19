@@ -107,7 +107,11 @@ def resolve_bands(entries):
 def load_bands(info=None, dir_=None):
     """The bands for this session, plus the name of the list they came from."""
     name = list_name(info)
-    path, _ = ensure_list(name, dir_)
+    # Both lists are laid down even though only one is read, so the user finds
+    # the other one waiting to be edited before a session of that kind starts.
+    for other in LISTS:
+        ensure_list(other, dir_)
+    path = list_path(name, dir_)
     entries = _entries_of(load_json(path) or {})
     if not entries:
         entries = _entries_of(load_json(TEMPLATES / f"{name}.json") or {})
