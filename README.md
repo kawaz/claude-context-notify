@@ -39,23 +39,21 @@ Then, to see (and create) your config:
 ## Configuring thresholds and wording
 
 Everything you can configure lives in two files in the plugin data directory, so it survives
-plugin updates: `autocompact-on.json` and `autocompact-off.json`. There are two commands for
-reaching them.
+plugin updates: `autocompact-on.json` and `autocompact-off.json`. One command reaches them.
 
-| Command | Audience | What it does |
-|---|---|---|
-| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled templates on first run, then prints both paths and the notifications this session uses. **Never edits.** |
-| `/context-notify:setup [request]` | The model edits for you | Rewrites the lists to match a free-form request, validates them, and reports the diff |
+| Command | What it does |
+|---|---|
+| `/context-notify:config [request]` | Copies the bundled templates on first run, then prints both paths and, verbatim, the file this session reads. Given a request, rewrites the lists to match it, validates them, and reports the diff |
 
-Open the file yourself with `config`, or ask in words with `setup`:
+Read them, or ask in words:
 
 ```bash
-/context-notify:setup make the 90% message shorter
-/context-notify:setup add a 70 threshold and drop 95 and 97
-/context-notify:setup            # no argument: shows the current bands and asks what to change
+/context-notify:config                        # paths and contents, nothing changed
+/context-notify:config make the 90% message shorter
+/context-notify:config add a 70 threshold and drop 95 and 97
 ```
 
-After editing, `setup` runs `ctx-notify.py check`, which verifies both files — the JSON, the
+After editing, it runs `ctx-notify.py check`, which verifies both files — the JSON, the
 schema version, the thresholds (integers 0–100), the presence of messages, and the
 spelling of every placeholder.
 

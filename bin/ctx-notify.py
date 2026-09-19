@@ -12,9 +12,10 @@ argv[1] is the role:
               speaks on the spot when the latch just moved up into a band.
   config   -- not a hook. Called by /context-notify:config with the plugin
               data dir as argv[2]. Creates the two notification lists from the
-              bundled templates if absent, then prints their paths and the
-              bands of the one this session uses.
-  check    -- not a hook. Called by /context-notify:setup after editing.
+              bundled templates if absent, then prints their paths, which one
+              this session uses, that one's contents verbatim, and the check
+              report on both.
+  check    -- not a hook. Called by /context-notify:config after editing.
               Validates both lists and exits non-zero if either has problems.
 
 stdin: hook JSON. stdout: hookSpecificOutput.additionalContext, or nothing.
@@ -461,41 +462,28 @@ def measure(ev, entries):
         return render(bands[band], pct=pct, used=used, window=win)
 
 
-def show_config(dir_=None, session_id=None):
-    """Create the two lists from the templates if absent, then describe them."""
+def show_config(dir_=None):
+    """Create the two lists from the templates if absent, then show them.
+
+    Both paths are named, but only the list this session reads is printed, and
+    printed verbatim: whoever reads this output next edits the text they saw.
+    """
+    paths = {}
     for name in LISTS:
         path, created = ensure_list(name, dir_)
+        paths[name] = path
         print(f"{name}: {path}" + ("  (テンプレから作成しました)" if created else ""))
     info = detect_autocompact()
     print(describe_autocompact(info))
-    entries, chosen = load_bands(info, dir_)
-    # Percentages mean different token counts per window, so show the bands
-    # against this session's own window when we know it.
-    st = load(state_path(session_id)) if session_id else {}
-    override = os.environ.get("CLAUDE_CONTEXT_WINDOW_TOKENS")
-    if override and override.isdigit():
-        window, window_from = int(override), "CLAUDE_CONTEXT_WINDOW_TOKENS"
-    elif st.get("window"):
-        window, window_from = st["window"], "このセッション"
-    elif pid_window():
-        window, window_from = pid_window(), "同じ claude プロセスの直前のセッション"
-    elif env_window():
-        window, window_from = env_window(), "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
-    else:
-        window, window_from = DEFAULT_WINDOW, "既定"
+    chosen = list_name(info)
     print(f"このセッションが使うのは: {chosen}")
-    for entry in entries:
-        at = entry.get("used_percent")
-        label = f"{at:>3}%" if isinstance(at, int) else "  ?%"
-        print(f"  {label}  {entry.get('message', '')}")
-    print(f"\n(帯は window {window:,} tokens = {window_from}の値 を基準に表示しています)")
-    print("上の 2 ファイルを編集すると閾値と文面を変えられます。")
-    print(
-        "プレースホルダ: {used_tokens} 使用トークン / {used_percent} 使用率 / "
-        "{available_tokens} 残りトークン / {available_percent} 残り % / "
-        "{window_tokens} window"
-    )
-    report_problems(check_config(list_path(chosen, dir_)))
+    print(f"\n--- {chosen} ({paths[chosen]})")
+    try:
+        print(paths[chosen].read_text().rstrip("\n"))
+    except OSError as e:
+        print(f"(読めません: {e})")
+    print()
+    check_all(dir_)
 
 
 def describe_autocompact(info):
@@ -524,11 +512,9 @@ def main():
         # The caller passes ${CLAUDE_PLUGIN_DATA}; an unexpanded template means
         # we are not running under a plugin install, so fall back to XDG.
         dir_ = arg if arg and "${" not in arg else None
-        sid_arg = sys.argv[3] if len(sys.argv) > 3 else ""
-        session_id = sid_arg if sid_arg and "${" not in sid_arg else None
         if role == "check":
             sys.exit(check_all(dir_))
-        show_config(dir_, session_id)
+        show_config(dir_)
         return
 
     try:

@@ -266,18 +266,26 @@ check "hook: 読まない側のリストもテンプレから作られる" "auto
 
 # --- the data dir is bootstrapped from the bundled templates -------------------
 bootdir="$tmp/plugindata"
-out="$(CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir")"
+# auto compact は環境で決まるので、どちらのリストが選ばれるかは明示して固定する。
+out="$(CLAUDE_CONTEXT_NOTIFY_DATA= DISABLE_AUTO_COMPACT=1 python3 "$script" config "$bootdir")"
 check "config: 初回は 2 ファイルともテンプレから作成する" "テンプレから作成" "$out"
-check "config: どちらを使うかを示す" "このセッションが使うのは: autocompact-" "$out"
-check "config: 使えるプレースホルダを並べる" "{available_percent}" "$out"
+check "config: 両方のパスを出す" "autocompact-on: $bootdir/autocompact-on.json" "$out"
+check "config: ファイルのパスを出す" "autocompact-off: $bootdir/autocompact-off.json" "$out"
+check "config: どちらを使うかを示す" "このセッションが使うのは: autocompact-off" "$out"
+check "config: 使う側の中身の見出しを出す" "--- autocompact-off ($bootdir/autocompact-off.json)" "$out"
+check "config: 中身をそのまま出す" '"notifications"' "$out"
+check "config: 使わない側の中身は出さない" SILENT \
+  "$(printf %s "$out" | grep -F -- "--- autocompact-on (" || true)"
+check "config: check は 2 ファイルとも見る" "設定は妥当です" "$out"
 for name in autocompact-on autocompact-off; do
   [[ -f "$bootdir/$name.json" ]] || { echo "NG: $name.json not created"; fails=$((fails + 1)); }
 done
 
 # 既存ファイルは決して上書きしない
 printf '{"version": 1, "notifications": [{"used_percent": 50, "message": "MINE {used_percent}%%"}]}' > "$bootdir/autocompact-on.json"
-CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir" >/dev/null
+out="$(CLAUDE_CONTEXT_NOTIFY_DATA= python3 "$script" config "$bootdir")"
 check "config: 既存ファイルは上書きしない" "MINE" "$(cat "$bootdir/autocompact-on.json")"
+check "config: 編集後の中身がそのまま出る" 'MINE {used_percent}%' "$out"
 
 # data dir が書けなくても同梱テンプレで動き続ける
 new_session
@@ -300,7 +308,7 @@ one_band "$tmp/oldnames" "OLD {pct}% {used} {window}"
 check "旧名の設定でも hook は落ちず文面がそのまま出る" "OLD {pct}% {used} {window}" \
   "$(CLAUDE_CONTEXT_NOTIFY_DATA=$tmp/oldnames run measure PostToolUse)"
 
-# --- check role: validation for /context-notify:setup --------------------------
+# --- check role: validation after an edit ---------------------------------------
 
 out="$(check_role "$fixture_dir")"
 check "check: 妥当な 2 ファイルを通す" "設定は妥当です" "$out"

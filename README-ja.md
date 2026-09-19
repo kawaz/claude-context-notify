@@ -39,22 +39,21 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 
 利用者が編集するのは plugin data dir に置かれた 2 ファイル
 (`autocompact-on.json` / `autocompact-off.json`) だけで、plugin を更新しても消えない。
-そこへの入口として command が 2 本ある。
+そこへの入口は command 1 本。
 
-| command | 誰が使うか | 何をするか |
-|---|---|---|
-| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、2 ファイルのパスとこのセッションが使う通知一覧を表示する。**編集はしない** |
-| `/context-notify:setup [要望]` | モデルに編集させる | 自由文の要望どおりにリストを書き換え、妥当性を検証して差分を報告する |
+| command | 何をするか |
+|---|---|
+| `/context-notify:config [要望]` | 初回はテンプレを複製し、2 ファイルのパスと、このセッションが読む側の中身をそのまま表示する。要望を渡すとその通りにリストを書き換え、妥当性を検証して差分を報告する |
 
-自分でファイルを開いて直したいなら `config`、言葉で頼みたいなら `setup`:
+中身を見るだけでも、言葉で頼んでもよい:
 
 ```bash
-/context-notify:setup 90% の文面をもっと短く
-/context-notify:setup 閾値に 70 を足して、95 と 97 は消して
-/context-notify:setup            # 引数なし = 現在値を見せて「何を変えますか」と聞く
+/context-notify:config                     # パスと中身を表示するだけ
+/context-notify:config 90% の文面をもっと短く
+/context-notify:config 閾値に 70 を足して、95 と 97 は消して
 ```
 
-`setup` は書き換えたあとに `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・
+書き換えたあとは `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・
 version・閾値 (0〜100 の整数)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
 ### auto compact の有効 / 無効でテンプレを切り替える
