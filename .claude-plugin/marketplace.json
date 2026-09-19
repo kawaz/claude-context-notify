@@ -3,7 +3,7 @@
   "owner": { "name": "kawaz" },
   "metadata": {
     "description": "Context usage threshold notifier for Claude Code",
-    "version": "0.5.2",
+    "version": "0.6.0",
     "license": "MIT"
   },
   "plugins": [
