@@ -1,25 +1,11 @@
 {
   "version": 1,
   "notifications": [
-    {
-      "used_percent": 20,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens). You will be notified again at 40%, 60%, 80% and 90%. Use these as a reference for pacing your work."
-    },
-    {
-      "used_percent": 40,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    },
-    {
-      "used_percent": 60,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    },
-    {
-      "used_percent": 80,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    },
-    {
-      "used_percent": 90,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    }
+    { "used_percent": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 20, "message": "You will be notified again at 40%, 60%, 80% and 90%. Use these as a reference for pacing your work." },
+    { "used_percent": 40, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 60, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 80, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 90, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" }
   ]
 }

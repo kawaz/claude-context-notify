@@ -1,33 +1,17 @@
 {
   "version": 1,
   "notifications": [
-    {
-      "used_percent": 20,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens). You will be notified again at 40%, 60%, 80%, 90%, 95% and 97%. Use these as a reference for pacing your work. As a rule of thumb, start preparing a handoff when the 90% notice arrives."
-    },
-    {
-      "used_percent": 40,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    },
-    {
-      "used_percent": 60,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
-    },
-    {
-      "used_percent": 80,
-      "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens). It is fine to keep working. Once usage passes 90%, start thinking about a handoff."
-    },
-    {
-      "used_percent": 90,
-      "message": "Main context usage has passed {used_percent}%. This is not fatal yet, so stay calm. Report it to the user; if work is in progress, it is fine to bring it to a natural stopping point. Do not start any large new task; hand off to the next session instead. The next notice comes at 95%."
-    },
-    {
-      "used_percent": 95,
-      "message": "ctx {used_percent}%. If you are in the middle of something, let go of it soon and start preparing the handoff."
-    },
-    {
-      "used_percent": 97,
-      "message": "ctx {used_percent}%! Ask the user to run a /compact right now!"
-    }
+    { "used_percent": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 20, "message": "You will be notified again at 40%, 60%, 80%, 90%, 95% and 97%. Use these as a reference for pacing your work. As a rule of thumb, start preparing a handoff when the 90% notice arrives." },
+    { "used_percent": 40, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 60, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 80, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 80, "message": "It is fine to keep working. Once usage passes 90%, start thinking about a handoff." },
+    { "used_percent": 90, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 90, "message": "This is not fatal yet, so stay calm. Report it to the user; if work is in progress, it is fine to bring it to a natural stopping point. Do not start any large new task; hand off to the next session instead. The next notice comes at 95%." },
+    { "used_percent": 95, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 95, "message": "If you are in the middle of something, let go of it soon and start preparing the handoff." },
+    { "used_percent": 97, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 97, "message": "Ask the user to run a /compact right now!" }
   ]
 }
