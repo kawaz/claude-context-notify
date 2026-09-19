@@ -1,24 +1,24 @@
 {
   "version": 1,
-  "bands": [
+  "notifications": [
     {
-      "at": 20,
+      "used_percent": 20,
       "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens). You will be notified again at 40%, 60%, 80% and 90%. Use these as a reference for pacing your work."
     },
     {
-      "at": 40,
+      "used_percent": 40,
       "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
-      "at": 60,
+      "used_percent": 60,
       "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
-      "at": 80,
+      "used_percent": 80,
       "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     },
     {
-      "at": 90,
+      "used_percent": 90,
       "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)"
     }
   ]

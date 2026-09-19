@@ -43,7 +43,7 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 
 | command | 誰が使うか | 何をするか |
 |---|---|---|
-| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、2 ファイルのパスとこのセッションが使う閾値・文面を表示する。**編集はしない** |
+| `/context-notify:config` | **ユーザ専用** (モデルは自動で呼ばない) | 初回はテンプレを複製し、2 ファイルのパスとこのセッションが使う通知一覧を表示する。**編集はしない** |
 | `/context-notify:setup [要望]` | モデルに編集させる | 自由文の要望どおりにリストを書き換え、妥当性を検証して差分を報告する |
 
 自分でファイルを開いて直したいなら `config`、言葉で頼みたいなら `setup`:
@@ -71,7 +71,7 @@ plugin は起動時に auto compact が有効かどうかだけを調べ、読�
 有効 / 無効に関わらず同じ通知にしたければ、2 ファイルを同じ内容にする。
 
 **auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window
-設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `at` にその % を書く。
+設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `used_percent` にその % を書く。
 有効 / 無効の判定材料は上記 env の 2 つと `autoCompactEnabled` だけ。後者は Claude Code の
 settings 優先順で探す (プロジェクトの `.claude/settings.local.json` → `.claude/settings.json`
 → ユーザの `settings.local.json` → `settings.json`、最後の手段として `.claude.json`)。
@@ -89,18 +89,18 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 ```json
 {
   "version": 1,
-  "bands": [
-    { "at": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
-    { "at": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
+  "notifications": [
+    { "used_percent": 20, "message": "現在のメインコンテキスト使用量: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 90, "message": "ctx {used_percent}%。残り {available_tokens} tokens。新しい作業に着手せず引き継ぎを始めてください。" }
   ]
 }
 ```
 
 - `version` — このファイルが従う形式のバージョン。現行と違えば `check` が知らせる
   (自動移行も上書きもしない)
-- `bands[].at` — 閾値 (%)。個数は自由、昇順で書く。同じ `at` を複数書くと、その文面が
-  改行で連結されて 1 回の通知としてまとめて出る
-- `bands[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
+- `notifications[].used_percent` — 閾値 (%)。個数は自由、昇順で書く。同じ `used_percent`
+  を複数書くと、その文面が改行で連結されて 1 回の通知としてまとめて出る
+- `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
   `{window_tokens}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
   セッションを壊さないようそのまま文字として残る

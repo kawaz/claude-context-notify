@@ -44,7 +44,7 @@ reaching them.
 
 | Command | Audience | What it does |
 |---|---|---|
-| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled templates on first run, then prints both paths and the bands this session uses. **Never edits.** |
+| `/context-notify:config` | **You only** (the model never invokes it) | Copies the bundled templates on first run, then prints both paths and the notifications this session uses. **Never edits.** |
 | `/context-notify:setup [request]` | The model edits for you | Rewrites the lists to match a free-form request, validates them, and reports the diff |
 
 Open the file yourself with `config`, or ask in words with `setup`:
@@ -75,7 +75,7 @@ To get the same notifications either way, give both files the same contents.
 
 **The plugin does not work out where auto-compact fires.** That point is set by Claude Code's
 own window setting (`window - buffer`), so if you want a band just before it, put that percent
-in `at` yourself. The on/off answer comes from the two environment variables above and from
+in `used_percent` yourself. The on/off answer comes from the two environment variables above and from
 `autoCompactEnabled`, looked up in Claude Code's own settings order — the project's
 `.claude/settings.local.json` and `.claude/settings.json`, then your `settings.local.json` and
 `settings.json`, with `.claude.json` as a last resort. The config directory is located from
@@ -93,19 +93,19 @@ Both files have the same shape:
 ```json
 {
   "version": 1,
-  "bands": [
-    { "at": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
-    { "at": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
+  "notifications": [
+    { "used_percent": 20, "message": "context {used_percent}% used ({used_tokens} / {window_tokens} tokens)." },
+    { "used_percent": 90, "message": "context {used_percent}% used, {available_tokens} tokens left. Wrap up and write the handoff." }
   ]
 }
 ```
 
 - `version` — the schema version these files are written against. `check` says so when it
   does not match the current one; nothing is migrated or overwritten for you.
-- `bands[].at` — the threshold, in percent. Any number of bands, in ascending order.
-  Several entries may share an `at`; their messages are joined with newlines and delivered
-  as the single notice for that crossing.
-- `bands[].message` — what the session is told. `{used_tokens}` (tokens used),
+- `notifications[].used_percent` — the threshold, in percent. Any number of entries, in
+  ascending order. Several entries may share a `used_percent`; their messages are joined with
+  newlines and delivered as the single notice for that crossing.
+- `notifications[].message` — what the session is told. `{used_tokens}` (tokens used),
   `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
   `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted.
   A misspelled placeholder is left as literal text rather than breaking the session.

@@ -49,9 +49,9 @@ $ARGUMENTS
 ```json
 {
   "version": 1,
-  "bands": [
-    { "at": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
-    { "at": 90, "message": "Context at {used_percent}%, {available_tokens} tokens left. Do not start new work; begin the handoff." }
+  "notifications": [
+    { "used_percent": 20, "message": "Main context usage: {used_percent}% ({used_tokens} / {window_tokens} tokens)" },
+    { "used_percent": 90, "message": "Context at {used_percent}%, {available_tokens} tokens left. Do not start new work; begin the handoff." }
   ]
 }
 ```
@@ -59,9 +59,9 @@ $ARGUMENTS
 - `autocompact-on.json` — auto compact が有効なセッションで使う帯と文面
 - `autocompact-off.json` — 無効なセッションで使う帯と文面
 - `version` — 形式のバージョン。現行と違えば `check` が知らせる (自分で移行しない)
-- `bands[].at` — 閾値 (%)。1〜100 の整数、昇順。個数は自由。同じ `at` を複数書くと
-  文面が改行で連結されて 1 回の通知になる
-- `bands[].message` — 跨いだ時にセッションへ注入する文面
+- `notifications[].used_percent` — 閾値 (%)。1〜100 の整数、昇順。個数は自由。同じ値を
+  複数書くと文面が改行で連結されて 1 回の通知になる
+- `notifications[].message` — 跨いだ時にセッションへ注入する文面
 - 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}`
   (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
   `{window_tokens}` (window の大きさ) の 5 つだけ

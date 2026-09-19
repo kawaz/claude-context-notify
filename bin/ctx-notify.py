@@ -80,15 +80,15 @@ def ensure_list(name, dir_=None):
     return path, True
 
 
-def _bands_of(cfg):
-    return [e for e in (cfg.get("bands") or []) if isinstance(e, dict)]
+def _entries_of(cfg):
+    return [e for e in (cfg.get("notifications") or []) if isinstance(e, dict)]
 
 
 def resolve_bands(entries):
     """Turn band entries into {percent: message}.
 
-    Several entries may share an `at`; their messages join with newlines in the
-    order they are written, so crossing the band still speaks exactly once.
+    Several entries may share a `used_percent`; their messages join with newlines
+    in the order they are written, so crossing the band still speaks exactly once.
     """
     bands = {}
     for entry in entries:
@@ -96,7 +96,7 @@ def resolve_bands(entries):
         if not isinstance(message, str):
             continue
         try:
-            at = int(entry.get("at"))
+            at = int(entry.get("used_percent"))
         except (TypeError, ValueError):
             continue
         if 0 < at <= 100:
@@ -108,9 +108,9 @@ def load_bands(info=None, dir_=None):
     """The bands for this session, plus the name of the list they came from."""
     name = list_name(info)
     path, _ = ensure_list(name, dir_)
-    entries = _bands_of(load_json(path) or {})
+    entries = _entries_of(load_json(path) or {})
     if not entries:
-        entries = _bands_of(load_json(TEMPLATES / f"{name}.json") or {})
+        entries = _entries_of(load_json(TEMPLATES / f"{name}.json") or {})
     return entries, name
 
 
@@ -216,24 +216,28 @@ def check_config(path):
             f"テンプレ templates/{path.stem}.json を参考に書き直してください"
         )
 
-    entries = raw.get("bands")
+    entries = raw.get("notifications")
     if not isinstance(entries, list) or not entries:
-        return problems + ["bands は 1 件以上の配列にしてください"]
+        return problems + ["notifications は 1 件以上の配列にしてください"]
 
     seen = []
     for i, entry in enumerate(entries):
-        where = f"bands[{i}]"
+        where = f"notifications[{i}]"
         if not isinstance(entry, dict):
             problems.append(f"{where}: オブジェクトにしてください")
             continue
-        at = entry.get("at")
+        at = entry.get("used_percent")
         if not isinstance(at, int) or isinstance(at, bool) or not 1 <= at <= 100:
-            problems.append(f"{where}.at は 1〜100 の整数にしてください (現在: {at!r})")
+            problems.append(
+                f"{where}.used_percent は 1〜100 の整数にしてください (現在: {at!r})"
+            )
         else:
-            # Entries may share an `at` (their messages join); only a step back
-            # in the order is a mistake.
+            # Entries may share a `used_percent` (their messages join); only a
+            # step back in the order is a mistake.
             if seen and at < seen[-1]:
-                problems.append(f"{where}.at = {at} が昇順になっていません (前は {seen[-1]})")
+                problems.append(
+                    f"{where}.used_percent = {at} が昇順になっていません (前は {seen[-1]})"
+                )
             seen.append(at)
         msg = entry.get("message")
         if not isinstance(msg, str) or not msg.strip():
@@ -483,7 +487,7 @@ def show_config(dir_=None, session_id=None):
         window, window_from = DEFAULT_WINDOW, "既定"
     print(f"このセッションが使うのは: {chosen}")
     for entry in entries:
-        at = entry.get("at")
+        at = entry.get("used_percent")
         label = f"{at:>3}%" if isinstance(at, int) else "  ?%"
         print(f"  {label}  {entry.get('message', '')}")
     print(f"\n(帯は window {window:,} tokens = {window_from}の値 を基準に表示しています)")

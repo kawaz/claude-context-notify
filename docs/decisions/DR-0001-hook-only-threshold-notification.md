@@ -120,7 +120,7 @@ JSON — python 標準ライブラリだけで読め、`jq` で lint できる�
 編集させる」型)。
 
 **検証はモデルの目視ではなく `ctx-notify.py check` が機械的に行う** — JSON の妥当性、
-閾値が 1〜100 の整数で昇順・重複なし、各帯に文面がある、プレースホルダの綴りが
+閾値が 1〜100 の整数で昇順、各帯に文面がある、プレースホルダの綴りが
 `{used_tokens}` / `{used_percent}` / `{available_tokens}` / `{available_percent}` /
 `{window_tokens}` のいずれか。散文で「確認せよ」と書くより、
 非ゼロ終了で押し返せるほうが確実。
