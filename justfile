@@ -78,12 +78,26 @@ promote:
 # push with gates (= check-on-default-branch を最初に置いて、worktree 違いなら lint 等を回さず即終了)
 push: check-on-default-branch ci
     bump-semver vcs push --branch main --jj-bookmark-auto-advance
-    @just _local-plugin-update
+    @just on-success-release
 
-# push 直後にこのマシンの plugin cache を新版へ (適用は各セッションで /reload-plugins)
-[private]
-_local-plugin-update:
-    -claude plugin marketplace update context-notify
-    -claude plugin update context-notify@context-notify
-    @echo ""
-    @echo "[hint] /reload-plugins to apply in this session without restart"
+# plugin cache は $CLAUDE_CONFIG_DIR 配下にあるため、環境ごとに update が要る
+# (personal で叩いても emrd 側は古いまま)。この plugin を入れている環境を
+# installed_plugins.json の記載で見つけて全部回す。
+# 各 update は warn 降格: push は既に成功済なので、ここで失敗しても release 自体は
+# 完了している。
+# release 成功後の local 反映 (全 CLAUDE_CONFIG_DIR、単独再実行可、push から自動)
+[script]
+on-success-release:
+    fail=0
+    for f in "$HOME"/.claude-*/plugins/installed_plugins.json; do
+        grep -q '"context-notify@context-notify"' "$f" 2>/dev/null || continue
+        dir="${f%/plugins/installed_plugins.json}"
+        echo "--- $dir"
+        CLAUDE_CONFIG_DIR="$dir" claude plugin marketplace update context-notify || fail=1
+        CLAUDE_CONFIG_DIR="$dir" claude plugin update context-notify@context-notify || fail=1
+    done
+    if [ "$fail" -ne 0 ]; then
+        echo "[warn] 一部環境で update 失敗。push は成功済み。'just on-success-release' で単独再実行可" >&2
+    fi
+    echo ""
+    echo "[hint] 各環境のセッションで /reload-plugins すると restart 無しで反映される"
