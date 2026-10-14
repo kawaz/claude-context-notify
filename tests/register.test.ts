@@ -1,8 +1,9 @@
 // The hooks in hooks/register.ts, run by the engine. Beneath the plugin the
 // test answers what a session would: the files (in memory), the store, the
-// clock, the environment and `$.session.usage()`.
+// clock, the environment, `$.session.usage()` and the conversation rows the
+// plugin appends.
 
-import type { On, PromptSubmitCommand, PromptSubmitResult, SessionContextBreakdown, ToolCallResult } from 'claude-code'
+import type { On, SessionContextBreakdown } from 'claude-code'
 import { describe, type Engine, expect, type MockClock, mock, test } from 'claude-code/testing'
 
 const CONFIG_DIR = '/cfg'
@@ -19,9 +20,10 @@ const OFF_LIST = list([20, 'OFF {used_percent}%'], [60, 'OFF {used_percent}%'])
 type World = {
   clock: MockClock
   sessionId: string
-  outcome: ToolCallResult
-  /** A prompt with this text is dropped beneath the plugin, as a settings hook's block would. */
-  blocked?: string
+  /** The text of each row the plugin appended to the conversation, in order. */
+  appended: string[]
+  /** While set, an append is refused with this reason, as a hook above the engine would. */
+  refuseAppend?: string
   files: Map<string, string>
   usage: { tokens?: number; window: number; percent?: number; autoCompact?: boolean; fails?: boolean }
 }
@@ -49,7 +51,7 @@ function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Rec
   const w: World = {
     clock: mock.clock(on, { now: NOW }),
     sessionId: 's1',
-    outcome: { result: 'ran', context: ['FROM BELOW'] },
+    appended: [],
     files: new Map(Object.entries(files)),
     usage: { tokens: 33_000, window: 50_000, percent: 66, autoCompact: true },
   }
@@ -79,7 +81,6 @@ function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Rec
     }
   })
   on('session.id', () => ({ value: w.sessionId }))
-  on('tool.call', () => w.outcome)
   on('turn.step', async function* (_$, e) {
     return {
       turnId: e.turnId,
@@ -90,16 +91,17 @@ function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Rec
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'test' },
     }
   })
-  on('prompt.submit', ($, e) =>
-    e.text === w.blocked ? { drop: 'blocked beneath' } : { text: e.text, ...(e.context === undefined ? {} : { context: e.context }) },
-  )
+  on('session.append', ($, e, next) => {
+    if (w.refuseAppend !== undefined) return { deny: w.refuseAppend }
+    for (const block of e.message.content) if (block.type === 'text' && typeof block.text === 'string') w.appended.push(block.text)
+    return next(e)
+  })
   return w
 }
 
-const BASH = { tool: 'Bash', command: 'true' } as const
 const STEP = { turnId: 't1', index: 0, model: 'test', messageCount: 1 }
 
-/** One main-loop response, read to its end: what the plugin measures. */
+/** One response of a loop (the main one unless `agentId`), read to its end. */
 async function respond($: Engine, agentId?: string): Promise<void> {
   const stream = $.turn.step(agentId === undefined ? STEP : { ...STEP, agentId })
   for await (const _chunk of stream) {
@@ -107,133 +109,72 @@ async function respond($: Engine, agentId?: string): Promise<void> {
   }
 }
 
-/** A prompt from the person: what reaches the model beside it. */
-async function submit($: Engine, text: string, command?: PromptSubmitCommand): Promise<PromptSubmitResult> {
-  return $.prompt.submit({ text, wait: false, origin: { kind: 'composer' }, ...(command === undefined ? {} : { command }) })
-}
-
-/** A response, then a tool call it asked for: what the tool's result carries. */
-async function respondThenCall($: Engine): Promise<readonly string[] | undefined> {
+/** The rows a main-loop response leads the plugin to append. */
+async function measured($: Engine, w: World): Promise<string[]> {
+  const before = w.appended.length
   await respond($)
-  return (await $.tool.call(BASH)).context
+  return w.appended.slice(before)
 }
 
-describe('measuring each response, delivering with the next request', () => {
-  test('a crossing is delivered with the tool result that follows, after what the hooks beneath said', async ($, on) => {
-    world(on)
-    expect(await respondThenCall($)).toEqual(['FROM BELOW', '[context-notify] ON 66% (33000 / 50000 tokens)'])
+describe('measuring each response and appending the notice', () => {
+  test('a crossing appends one row to the conversation', async ($, on) => {
+    const w = world(on)
+    expect(await measured($, w)).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
-  test('a crossing in a response without tools is delivered with the next prompt', async ($, on) => {
-    world(on)
-    await respond($)
-    expect((await submit($, 'next')).context).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
-  })
-
-  test('a notice is delivered once, through whichever door comes first', async ($, on) => {
-    world(on)
-    await respond($)
-    expect((await submit($, 'next')).context?.length).toBe(1)
-    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
-    expect((await submit($, 'again')).context).toBeUndefined()
-  })
-
-  test('nothing is delivered before a response is measured', async ($, on) => {
-    world(on)
-    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
-    expect((await submit($, 'first')).context).toBeUndefined()
-  })
-
-  test('the same band again is silent', async ($, on) => {
-    world(on)
-    await respondThenCall($)
-    expect(await respondThenCall($)).toEqual(['FROM BELOW'])
+  test('the same band again appends nothing', async ($, on) => {
+    const w = world(on)
+    await measured($, w)
+    expect(await measured($, w)).toEqual([])
   })
 
   test('the latch is kept per session in the store and read back', async ($, on) => {
-    world(on, { 'session:s1': { band: 60, updatedAt: NOW } })
-    expect(await respondThenCall($)).toEqual(['FROM BELOW'])
+    const w = world(on, { 'session:s1': { band: 60, updatedAt: NOW } })
+    expect(await measured($, w)).toEqual([])
   })
 
-  test('a pending notice survives in the store until a request carries it', async ($, on) => {
-    world(on, { 'session:s1': { band: 60, updatedAt: NOW, pending: 'LEFT OVER' } })
-    expect((await submit($, 'resumed')).context).toEqual(['[context-notify] LEFT OVER'])
-  })
-
-  test('a fall then a rise speaks again; a fall drops an undelivered notice', async ($, on) => {
+  test('a fall appends nothing; a rise after it appends again', async ($, on) => {
     const w = world(on)
-    await respond($)
+    await measured($, w)
     w.usage = { ...w.usage, tokens: 5_000, percent: 10 }
-    await respond($)
-    expect((await submit($, 'after compact')).context).toBeUndefined()
+    expect(await measured($, w)).toEqual([])
     w.usage = { ...w.usage, tokens: 33_000, percent: 66 }
-    expect(await respondThenCall($)).toEqual(['FROM BELOW', '[context-notify] ON 66% (33000 / 50000 tokens)'])
+    expect(await measured($, w)).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
-  test('a newer band replaces an undelivered notice', async ($, on) => {
+  test("a subagent's response is not measured", async ($, on) => {
     const w = world(on)
-    w.usage = { ...w.usage, tokens: 15_000, percent: 30 }
-    await respond($)
-    w.usage = { ...w.usage, tokens: 33_000, percent: 66 }
-    await respond($)
-    expect((await submit($, 'next')).context).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
-  })
-
-  test("a subagent's response is not measured and its tool calls carry nothing", async ($, on) => {
-    world(on)
     await respond($, 'agent-1')
-    expect((await submit($, 'next')).context).toBeUndefined()
-    await respond($)
-    const inSubagent = { ...BASH, agentId: 'agent-1' }
-    expect((await $.tool.call(inSubagent)).context).toEqual(['FROM BELOW'])
-    expect((await $.tool.call(BASH)).context?.length).toBe(2)
+    expect(w.appended).toEqual([])
+    expect(await measured($, w)).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
-  test('a refused or failed call carries nothing and leaves the notice pending', async ($, on) => {
+  test('a refused append leaves the latch, so the next response tries the band again', async ($, on) => {
     const w = world(on)
-    await respond($)
-    w.outcome = { deny: 'no' }
-    expect(await $.tool.call(BASH)).toEqual({ deny: 'no' })
-    w.outcome = { result: 'boom', isError: true }
-    expect((await $.tool.call(BASH)).context).toBeUndefined()
-    w.outcome = { result: 'ran' }
-    expect((await $.tool.call(BASH)).context).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
-  })
-
-  test('a slash command does not take the notice', async ($, on) => {
-    world(on)
-    await respond($)
-    expect((await submit($, '/cost', { name: 'cost', args: '' })).context).toBeUndefined()
-    expect((await submit($, 'next')).context?.length).toBe(1)
-  })
-
-  test('a dropped prompt gives the notice back', async ($, on) => {
-    const w = world(on)
-    w.blocked = 'blocked'
-    await respond($)
-    expect(await submit($, 'blocked')).toEqual({ drop: 'blocked beneath' })
-    expect((await submit($, 'next')).context?.length).toBe(1)
+    w.refuseAppend = 'not now'
+    expect(await measured($, w)).toEqual([])
+    w.refuseAppend = undefined
+    expect(await measured($, w)).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
   test('nothing to measure yet leaves the latch where it is', async ($, on) => {
     const w = world(on)
     w.usage = { window: 50_000, autoCompact: true }
-    expect(await respondThenCall($)).toEqual(['FROM BELOW'])
+    expect(await measured($, w)).toEqual([])
     w.usage = { tokens: 33_000, window: 50_000, percent: 66, autoCompact: true }
-    expect((await respondThenCall($))?.length).toBe(2)
+    expect(await measured($, w)).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
-  test('a failed measurement passes the response and the call through untouched', async ($, on) => {
+  test('a failed measurement passes the response through untouched', async ($, on) => {
     const w = world(on)
     w.usage = { ...w.usage, fails: true }
-    expect(await respondThenCall($)).toEqual(['FROM BELOW'])
+    expect(await measured($, w)).toEqual([])
   })
 
-  test('parallel tool calls deliver a notice once', async ($, on) => {
-    world(on)
-    await respond($)
-    const rs = await Promise.all([$.tool.call(BASH), $.tool.call(BASH), $.tool.call(BASH)])
-    expect(rs.map((r) => r.context?.length).sort()).toEqual([1, 1, 2])
+  test('responses measured together append a band once', async ($, on) => {
+    const w = world(on)
+    await Promise.all([respond($), respond($), respond($)])
+    expect(w.appended).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 })
 
@@ -241,23 +182,23 @@ describe('which list, and where it lives', () => {
   test('auto compact off reads the off list', async ($, on) => {
     const w = world(on)
     w.usage = { ...w.usage, autoCompact: false }
-    expect((await respondThenCall($))?.[1]).toBe('[context-notify] OFF 66%')
+    expect((await measured($, w))[0]).toBe('[context-notify] OFF 66%')
   })
 
   test('no breakdown reads the on list', async ($, on) => {
     const w = world(on)
     w.usage = { tokens: 33_000, window: 50_000, percent: 66 }
-    expect((await respondThenCall($))?.[1]).toContain('ON 66%')
+    expect((await measured($, w))[0]).toContain('ON 66%')
   })
 
   test("the user's list in the data dir wins over the template", async ($, on) => {
-    world(on, {}, { [`${DATA}/autocompact-on.json`]: list([50, 'MINE {used_percent}%']) })
-    expect((await respondThenCall($))?.[1]).toBe('[context-notify] MINE 66%')
+    const w = world(on, {}, { [`${DATA}/autocompact-on.json`]: list([50, 'MINE {used_percent}%']) })
+    expect((await measured($, w))[0]).toBe('[context-notify] MINE 66%')
   })
 
   test('a list with no usable line falls back to the template', async ($, on) => {
-    world(on, {}, { [`${DATA}/autocompact-on.json`]: 'not json' })
-    expect((await respondThenCall($))?.[1]).toContain('ON 66%')
+    const w = world(on, {}, { [`${DATA}/autocompact-on.json`]: 'not json' })
+    expect((await measured($, w))[0]).toContain('ON 66%')
   })
 })
 
@@ -283,10 +224,10 @@ describe('session.start', () => {
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
     // The fresh latch is still there: that session stays silent in its band.
     w.sessionId = 'fresh'
-    expect((await respondThenCall($))).toEqual(['FROM BELOW'])
+    expect(await measured($, w)).toEqual([])
     // The old one is gone: the same usage speaks again.
     w.sessionId = 'old'
-    expect((await respondThenCall($))?.length).toBe(2)
+    expect((await measured($, w)).length).toBe(1)
   })
 })
 
@@ -295,24 +236,24 @@ describe('a session that stays in one band', () => {
     on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
     on('session.start', () => ({ cwd: '/w' }))
     const w = world(on)
-    expect((await respondThenCall($))?.length).toBe(2)
+    expect((await measured($, w)).length).toBe(1)
     // 20 days in the same band, measured now and then; then 20 more days, so
     // the band last changed 40 days ago but the session was last seen 20 ago.
     await w.clock.advance(20 * DAY)
-    expect((await respondThenCall($))).toEqual(['FROM BELOW'])
+    expect(await measured($, w)).toEqual([])
     await w.clock.advance(20 * DAY)
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-    expect((await respondThenCall($))).toEqual(['FROM BELOW'])
+    expect(await measured($, w)).toEqual([])
   })
 
   test('an unmeasured latch past the TTL is still swept', async ($, on) => {
     on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
     on('session.start', () => ({ cwd: '/w' }))
     const w = world(on)
-    await respondThenCall($)
+    await respond($)
     await w.clock.advance(31 * DAY)
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-    expect((await respondThenCall($))?.length).toBe(2)
+    expect((await measured($, w)).length).toBe(1)
   })
 })
 

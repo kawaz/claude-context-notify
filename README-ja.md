@@ -10,12 +10,10 @@ Claude Code の Mods (TypeScript の hooks module) だけで完結する。proxy
 
 長く回っているセッションは、あと何割残っているかを知らない。94% から大きな調査を始めて、引き継ぎの途中で切れる。数字自体は Claude Code が持っているのに、それをモデルの目の前に置く仕組みが無い。
 
-この plugin はメインの会話で応答が返るたびに使用量を測り、閾値を跨いだら次のリクエスト (次の tool の結果か、次の prompt) にモデルが実際に読む形で添える:
+この plugin はメインの会話で応答が返るたびに使用量を測り、閾値を跨いだら会話に 1 行足す。その行は人には見えず、モデルが次のリクエスト (次の tool の結果か、次の prompt) で読む:
 
 ```
-<system-reminder>
-tool.call hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
-</system-reminder>
+[context-notify] Main context usage: 60% (36242 / 60000 tokens)
 ```
 
 ## 必要なもの
@@ -94,18 +92,17 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 
 | hook | 何をするか |
 |---|---|
-| `turn.step` (応答ごと) | 使用量を測り、latch を動かし、帯を上に跨いでいればその帯の通知を未配達として持つ |
-| `prompt.submit`, `tool.call` | 未配達の通知を、ターンを始めるリクエストか tool の結果の後のリクエストのうち先に来た方に添えて渡し、消す |
+| `turn.step` (応答ごと) | 使用量を測り、latch を動かし、帯を上に跨いでいればその帯の通知を会話に 1 行足す |
 | `session.start` | 2 ファイルが無ければテンプレから作り、古い latch を掃除し、検査用の tool を登録する |
 | `/context-notify:config` の展開時 | 2 ファイルのパス、使う側、検査結果、使う側の中身を command の prompt に埋め込む |
 
 使用量と window は Claude Code が status line に出すのと同じ値 (`$.session.usage()` の `context.tokens` / `window` / `percent`) で、直前の応答の input 側 (uncached + cache 書き込み + cache 読み出し) を model の window で割ったもの。window は Claude Code 自身が知っている値なので、`[1m]` の model も `/clear` 後も正しく割られる。
 
-subagent の応答は測らず、subagent の tool の結果にも通知を添えない (使用量は main の context のもので、そこで喋ると subagent に届いてしまう)。拒否・失敗した tool の呼び出しと slash command にも添えない。
+subagent の応答は測らない (使用量は main の context のもので、通知を足すのも main の会話だけ)。
 
-通知はどのみち起きるリクエストに添えて 1 回だけ届くので、そのために余分なターンは起きない。tool を呼ばない応答で帯を跨いだ分は、次のターンの始まりに届く。
+通知は会話の 1 行なので、そのために余分なターンは起きず、次に起きるリクエストでモデルが読む。tool を呼ばない応答で帯を跨いだ分は、次のターンの始まりに読まれる。別の plugin がその行を拒んだ時は latch を動かさず、次の応答でもう一度足す。
 
-latch は plugin 専用の store に session ごとに band 1 個と、まだ渡していない通知を持つだけ。下がった時は、まだ渡していない通知も一緒に捨てる。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日計測されていない session の latch は消える (同じ帯のままでも、計測があれば 1 日ごとに時刻を更新する)。
+latch は plugin 専用の store に session ごとに band を 1 個持つだけ。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日計測されていない session の latch は消える (同じ帯のままでも、計測があれば 1 日ごとに時刻を更新する)。
 
 設計判断の記録: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md)。
 
