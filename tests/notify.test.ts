@@ -7,7 +7,6 @@ import {
   advance,
   bandOf,
   dataDir,
-  grouped,
   isStale,
   LATCH_TOUCH_MS,
   LATCH_TTL_MS,
@@ -56,7 +55,7 @@ describe('advance (the latch)', () => {
   test('first measurement speaks the band it lands in', () => {
     expect(advance(undefined, usage(33_000), BANDS, true)).toEqual({
       band: 60,
-      message: 'ctx 66% (33,000 / 50,000 tokens)',
+      message: 'ctx 66% (33000 / 50000 tokens)',
     })
   })
 
@@ -65,7 +64,7 @@ describe('advance (the latch)', () => {
   })
 
   test('rising speaks only the highest band reached', () => {
-    expect(advance(20, usage(48_600), BANDS, true)).toEqual({ band: 97, message: 'ctx 97% (48,600 / 50,000 tokens)' })
+    expect(advance(20, usage(48_600), BANDS, true)).toEqual({ band: 97, message: 'ctx 97% (48600 / 50000 tokens)' })
   })
 
   test('falling moves the latch back without a word', () => {
@@ -73,7 +72,7 @@ describe('advance (the latch)', () => {
   })
 
   test('rising again after a fall speaks again', () => {
-    expect(advance(0, usage(33_000), BANDS, true)?.message).toBe('ctx 66% (33,000 / 50,000 tokens)')
+    expect(advance(0, usage(33_000), BANDS, true)?.message).toBe('ctx 66% (33000 / 50000 tokens)')
   })
 
   test('a continuation turn the notice caused moves the latch but does not speak', () => {
@@ -98,7 +97,7 @@ describe('render', () => {
   test('the five placeholders', () => {
     expect(
       render('{used_tokens} {used_percent}% left {available_tokens} / {available_percent}% of {window_tokens}', usage(33_000)),
-    ).toBe('33,000 66% left 17,000 / 34% of 50,000')
+    ).toBe('33000 66% left 17000 / 34% of 50000')
   })
 
   test('available_percent complements the rounded used_percent', () => {
@@ -116,10 +115,8 @@ describe('render', () => {
     )
   })
 
-  test('grouped thousands, negative included', () => {
-    expect(grouped(1_000_000)).toBe('1,000,000')
-    expect(grouped(999)).toBe('999')
-    expect(grouped(-1_500)).toBe('-1,500')
+  test('token counts are plain integers', () => {
+    expect(render('{used_tokens} / {window_tokens}', usage(195_077, 1_000_000))).toBe('195077 / 1000000')
   })
 
   test('placeholderNames takes only {identifier}', () => {

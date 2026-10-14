@@ -14,7 +14,7 @@ This plugin measures usage after every tool call and at the end of every respons
 
 ```
 <system-reminder>
-PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36,242 / 60,000 tokens)
+PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
 </system-reminder>
 ```
 

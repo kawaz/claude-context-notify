@@ -192,20 +192,15 @@ export function placeholderNames(template: string): string[] {
  */
 export function render(template: string, usage: Usage): string {
   const values: Readonly<Record<string, string>> = {
-    used_tokens: grouped(usage.tokens),
+    used_tokens: String(usage.tokens),
     used_percent: String(usage.percent),
-    available_tokens: grouped(usage.window - usage.tokens),
+    available_tokens: String(usage.window - usage.tokens),
     available_percent: String(100 - usage.percent),
-    window_tokens: grouped(usage.window),
+    window_tokens: String(usage.window),
   }
   return template.replace(PLACEHOLDER, (whole, name: string) => (Object.hasOwn(values, name) ? values[name] : undefined) ?? whole)
 }
 
-/** `1234567` as `1,234,567`. */
-export function grouped(n: number): string {
-  const sign = n < 0 ? '-' : ''
-  return sign + String(Math.abs(Math.trunc(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-}
 
 /** The environment that decides where plugin data lives outside a marketplace install. */
 export type PluginsHome = { cacheDir?: string; configDir?: string; home?: string }

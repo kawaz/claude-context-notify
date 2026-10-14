@@ -14,7 +14,7 @@ Claude Code の Mods (TypeScript の hooks module) だけで完結する。proxy
 
 ```
 <system-reminder>
-PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36,242 / 60,000 tokens)
+PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
 </system-reminder>
 ```
 

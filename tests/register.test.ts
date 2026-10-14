@@ -90,7 +90,7 @@ describe('measuring at PostToolUse', () => {
   test('crossing a band speaks it after what the hooks beneath said', async ($, on) => {
     world(on)
     const r = await $.classic.PostToolUse(postToolUse())
-    expect(r.additionalContext).toEqual(['FROM BELOW', '[context-notify] ON 66% (33,000 / 50,000 tokens)'])
+    expect(r.additionalContext).toEqual(['FROM BELOW', '[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
   test('the same band again is silent', async ($, on) => {
@@ -112,7 +112,7 @@ describe('measuring at PostToolUse', () => {
     w.usage = { ...w.usage, tokens: 33_000, percent: 66 }
     expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual([
       'FROM BELOW',
-      '[context-notify] ON 66% (33,000 / 50,000 tokens)',
+      '[context-notify] ON 66% (33000 / 50000 tokens)',
     ])
   })
 
@@ -121,7 +121,7 @@ describe('measuring at PostToolUse', () => {
     expect((await $.classic.PostToolUse(postToolUse('agent-1'))).additionalContext).toEqual(['FROM BELOW'])
     expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual([
       'FROM BELOW',
-      '[context-notify] ON 66% (33,000 / 50,000 tokens)',
+      '[context-notify] ON 66% (33000 / 50000 tokens)',
     ])
   })
 
@@ -150,7 +150,7 @@ describe('measuring at Stop', () => {
   test('crossing a band speaks it', async ($, on) => {
     world(on)
     const r = await $.classic.Stop({ session_id: 's1', stop_hook_active: false })
-    expect(r.additionalContext).toEqual(['[context-notify] ON 66% (33,000 / 50,000 tokens)'])
+    expect(r.additionalContext).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
   test('a continuation turn moves the latch without speaking, so nothing repeats', async ($, on) => {
