@@ -208,8 +208,17 @@ describe('readList: placeholder spelling', () => {
     expect(problemsOf('{used_tokens:,} tokens')).toEqual([
       'notifications[0].message: {used_tokens:,} の書式指定 (:,) は使えません。{used_tokens} と名前だけ書いてください',
     ])
-    expect(problemsOf('{used_percent!r}')).toEqual([
-      'notifications[0].message: {used_percent!r} の書式指定 (!r) は使えません。{used_percent} と名前だけ書いてください',
+    expect(problemsOf('{used_percent:03d}')).toEqual([
+      'notifications[0].message: {used_percent:03d} の書式指定 (:03d) は使えません。{used_percent} と名前だけ書いてください',
+    ])
+  })
+
+  test('a conversion is reported as one, alone or with a format spec', () => {
+    expect(problemsOf('{used_tokens!s}')).toEqual([
+      'notifications[0].message: {used_tokens!s} の変換指定 (!s) は使えません。{used_tokens} と名前だけ書いてください',
+    ])
+    expect(problemsOf('{used_tokens!s:>10}')).toEqual([
+      'notifications[0].message: {used_tokens!s:>10} の変換指定と書式指定 (!s:>10) は使えません。{used_tokens} と名前だけ書いてください',
     ])
   })
 
@@ -225,8 +234,8 @@ describe('readList: placeholder spelling', () => {
     expect(problemsOf('{{literal}} {used_percent}')).toEqual([])
   })
 
-  test('render leaves a format spec and an unpaired brace as they are', () => {
-    expect(render('{used_tokens:,} / {used_percent}% {', usage(33_000))).toBe('{used_tokens:,} / 66% {')
+  test('render leaves a format spec, a conversion and an unpaired brace as they are', () => {
+    expect(render('{used_tokens:,} {used_tokens!s} / {used_percent}% {', usage(33_000))).toBe('{used_tokens:,} {used_tokens!s} / 66% {')
   })
 })
 

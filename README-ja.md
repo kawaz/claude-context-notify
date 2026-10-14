@@ -86,7 +86,7 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 
 - `version` — このファイルが従う形式のバージョン。現行と違えば検査が知らせる (自動移行も上書きもしない)
 - `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、個数は自由、並び順は問わない (値ごとにまとまり、同じ値の中ではファイル内の順)。`used_percent: 0` はセッション最初の測定で 1 回出る。同じ `used_percent` を複数書くと、その文面が改行で連結されて 1 回の通知としてまとめて出る
-- `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}` (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) / `{window_tokens}` (window の大きさ) が展開される。名前だけを書き、`{used_tokens:,}` のような書式指定は使えない。波括弧そのものは `{{` / `}}` と書く。綴りを間違えたプレースホルダは、セッションを壊さないようそのまま文字として残る
+- `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}` (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) / `{window_tokens}` (window の大きさ) が展開される。名前だけを書き、`{used_percent:03d}` のような書式指定も `{used_tokens!s}` のような変換指定も使えない。波括弧そのものは `{{` / `}}` と書く。綴りを間違えたプレースホルダは、セッションを壊さないようそのまま文字として残る
 
 ファイルが読めない時や、使える行が 1 つも無い時は、同梱のテンプレで動く。
 

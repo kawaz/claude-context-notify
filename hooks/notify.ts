@@ -110,7 +110,7 @@ export function readList(text: string, name: ListName): ListReading {
         const name = /^[^:!]*/.exec(field)?.[0] ?? field
         if (name !== field && isPlaceholder(name)) {
           problems.push(
-            `${where}.message: {${field}} の書式指定 (${field.slice(name.length)}) は使えません。{${name}} と名前だけ書いてください`,
+            `${where}.message: {${field}} の${suffixKind(field.slice(name.length))} (${field.slice(name.length)}) は使えません。{${name}} と名前だけ書いてください`,
           )
         } else if (!isPlaceholder(field)) {
           problems.push(
@@ -132,6 +132,12 @@ export function readList(text: string, name: ListName): ListReading {
     }
   }
   return { entries, problems }
+}
+
+/** What follows a placeholder's name, in check's words: `!s` is a conversion, `:,` a format spec. */
+function suffixKind(suffix: string): string {
+  if (!suffix.startsWith('!')) return '書式指定'
+  return suffix.includes(':') ? '変換指定と書式指定' : '変換指定'
 }
 
 function isPlaceholder(name: string): boolean {
