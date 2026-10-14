@@ -98,8 +98,9 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 `commands/config.md` は model 向けの手順書のまま残す。引数が無ければ 2 ファイルのパスと、このセッションに適用される側の中身をそのまま見せる (整形一覧を挟まないので、読んだテキストがそのまま編集対象になる)。引数があれば model が要望どおりに書き換えてから検証する。
 
 - 見せる素材は invoke 時に埋め込む。`skill.prompt` を `{ skill: "context-notify:config" }` で hook し、展開された prompt の末尾に `<context-notify-report>` ブロック (2 ファイルのパス、auto compact の有効 / 無効、使う側、2 ファイルの検証結果、使う側の中身) を足す。model が素材を取りに行く往復を挟まない
-- 検証は model の目視ではなく、`$.tool.register` で足す `mcp__context-notify__check` が行う。JSON の妥当性、version、閾値が 0〜100 の整数、各行に文面がある、プレースホルダの綴り。問題を文で返し、model は通るまで直す
-- `skill.prompt` の埋め込みが無い時 (下記 Consequences の組織管理下など) は、手順書が check を呼んで同じ情報 (中身以外) を得て、中身は Read で読むよう指示する
+- 編集後の検証は model の目視ではなく、`$.tool.register` で足す `mcp__context-notify__check` が行う。JSON の妥当性、version、閾値が 0〜100 の整数、各行に文面がある、プレースホルダの綴り。問題を文で返し、model は通るまで直す
+- 埋め込む報告と check の答えは同じ純粋関数 (`report`) が作る。違いは使う側の中身を付けるかどうかだけ
+- 埋め込みが届かない環境向けの別経路は持たない。そういう環境 (下記 Consequences の組織管理下) では計測の hook も走らず、config だけ動いても plugin としては働かない。経路が 2 本あると手順書が分岐して読みにくくなる
 
 ### 7. 外から来るデータは境界で手書きの parse を通す
 
@@ -121,7 +122,7 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 - **`PreCompact` で compact を知らせる**: latch の巻き戻しだけで足りる
 - **latch を `$.state` に置く**: `/clear` と resume で消え、通知済みの閾値を再通知する
 - **`command.run` で config の素材を `context` に足す**: prompt 型 command では捨てられる (Context の実測)
-- **config の素材を tool だけで渡す (手順の 1 で model が check を呼ぶ)**: 組織管理下でも動くが、invoke のたびに往復が 1 回増える。組織管理下では計測の hook 自体が走らないので、そこで config だけ動いても plugin としては働かない
+- **config の素材を tool で渡す (手順の 1 で model が check を呼ぶ。単独でも、埋め込みが無い時の退避としても)**: invoke のたびに往復が 1 回増え、退避として持つと手順書が分岐する。組織管理下では計測の hook 自体が走らないので、そこで config だけ動いても plugin としては働かない
 - **スキーマライブラリを vendoring する**: 上記 7
 
 ## Consequences
