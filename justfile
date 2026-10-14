@@ -1,6 +1,7 @@
 # claude-context-notify justfile
 # canonical task runner は kawaz/bump-semver に準拠。
-# このリポは plugin (hook script + 1 command) なので lint は JSON 妥当性 + python 構文 + frontmatter。
+# このリポは plugin (Claude Mods の hooks module + 1 command) なので、lint は
+# manifest / hooks module の検査 (claude plugin validate)、型検査、JSON 妥当性、frontmatter。
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -14,6 +15,22 @@ default: list
 list:
     @just --list --unsorted
 
+# manifest と hooks module (hook する event / $ の呼び出し / env の読み書き) の検査
+[private]
+lint-plugin:
+    claude plugin validate .
+
+# hooks module とテストの型検査。型定義は engine が mod を読み込む時に
+# .claude-plugin/types/ へ書き出す (git 管理外)
+[private]
+[script]
+lint-ts:
+    if [ ! -f .claude-plugin/types/claude-code/index.d.ts ]; then
+        echo "NG: .claude-plugin/types/ がありません。一度 'claude --plugin-dir .' を対話で起動すると書き出されます" >&2
+        exit 1
+    fi
+    tsc -p . && echo "ok: tsc"
+
 # JSON 妥当性 (plugin.json / marketplace.json / hooks.json / 同梱テンプレ)
 [private]
 lint-json:
@@ -21,22 +38,17 @@ lint-json:
       jq empty "$f" && echo "ok: $f"; \
     done
 
-# hook script の python 構文チェック
-[private]
-lint-py:
-    for f in bin/*.py; do python3 -m py_compile "$f" && echo "ok: $f"; done
-
 # commands/*.md に frontmatter (--- 開始) があるか
 [private]
 lint-commands:
     for f in commands/*.md; do head -1 "$f" | grep -qx -- '---' && echo "ok: $f" || { echo "NG frontmatter: $f"; exit 1; }; done
 
 # 全 lint
-lint: lint-json lint-py lint-commands
+lint: lint-plugin lint-ts lint-json lint-commands
 
-# ctx-notify.py の振る舞いテスト (= fixture transcript に対する latch マトリクス)
+# 閾値・latch・通知リストの判定 (純粋関数) と、engine 経由の hook の振る舞い
 test: lint
-    @bash test/run.sh
+    claude plugin test .
 
 # CI entry (= 翻訳ペア freshness も含む)
 ci: lint test check-outdated-translations
