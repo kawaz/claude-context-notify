@@ -14,6 +14,7 @@ import {
   placeholderNames,
   readList,
   render,
+  report,
   resolveBands,
   verdict,
 } from '../hooks/notify'
@@ -239,5 +240,32 @@ describe('where the lists live', () => {
   test('a latch goes stale after the TTL', () => {
     expect(isStale({ band: 20, updatedAt: 0 }, LATCH_TTL_MS)).toBe(false)
     expect(isStale({ band: 20, updatedAt: 0 }, LATCH_TTL_MS + 1)).toBe(true)
+  })
+})
+
+describe('report (config embeds it, check answers it)', () => {
+  const on = { name: 'autocompact-on' as const, path: '/d/autocompact-on.json', isCreated: true, text: '{"version": 1, "notifications": [{"used_percent": 50, "message": "x"}]}\n' }
+  const off = { name: 'autocompact-off' as const, path: '/d/autocompact-off.json', isCreated: false, text: '{"version": 1, "notifications": [{"used_percent": 50, "message": "{pcnt}"}]}' }
+
+  test('paths, the list in use and the verdict over both', () => {
+    const r = report([on, off], true, false)
+    expect(r.ok).toBe(false)
+    expect(r.text).toBe(
+      [
+        'autocompact-on: /d/autocompact-on.json  (テンプレから作成しました)',
+        'autocompact-off: /d/autocompact-off.json',
+        'auto compact: 有効 (発火点は Claude Code 側の window 設定で決まる)',
+        'このセッションが使うのは: autocompact-on',
+        '',
+        '設定に問題があります:',
+        '  - autocompact-off: notifications[0].message: 未知のプレースホルダ {pcnt} (使えるのは {used_tokens}, {used_percent}, {available_tokens}, {available_percent}, {window_tokens})',
+      ].join('\n'),
+    )
+  })
+
+  test('with contents, the list in use follows verbatim', () => {
+    const r = report([on, off], false, true)
+    expect(r.text).toContain('このセッションが使うのは: autocompact-off')
+    expect(r.text.endsWith(`--- autocompact-off (/d/autocompact-off.json)\n${off.text}`)).toBe(true)
   })
 })

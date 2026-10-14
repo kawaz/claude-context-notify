@@ -7,6 +7,7 @@ import {
   LATCH_PREFIX,
   LIST_NAMES,
   type LatchRecord,
+  type ListFile,
   type ListName,
   type ListReading,
   advance,
@@ -15,8 +16,8 @@ import {
   latchKey,
   listFor,
   readList,
+  report,
   resolveBands,
-  verdict,
 } from './notify'
 
 const PREFIX = '[context-notify] '
@@ -25,8 +26,8 @@ const CHECK_TOOL = 'check'
 
 type $ = EngineInterface
 
-/** One list as this session finds it: where it is read from, and whether this call created it. */
-type Located = { name: ListName; path: string; isCreated: boolean }
+/** A list's file before it is read. */
+type Located = Omit<ListFile, 'text'>
 
 async function home($: $): Promise<string | undefined> {
   return dataDir($.plugin.root, $.plugin.name, {
@@ -83,7 +84,12 @@ async function loadList($: $, name: ListName): Promise<ListReading> {
  *
  * The store is outside data (another version of this plugin, a hand edit), so
  * this is a parse boundary: anything not shaped as a LatchRecord reads as no
- * latch. See readList in notify.ts for why it is checked by hand.
+ * latch.
+ *
+ * Design rationale: checked by hand rather than through a schema library. A
+ * hooks module imports only its own files and "claude-code", so a library
+ * would have to be vendored: third-party code, its license and its updates,
+ * for the two small shapes this plugin parses (this one and readList's).
  */
 async function readLatch($: $, key: string): Promise<LatchRecord | undefined> {
   const raw = await $.store.get(key)
@@ -144,34 +150,9 @@ async function sweepLatches($: $): Promise<void> {
   }
 }
 
-const describeAutoCompact = (isEnabled: boolean): string =>
-  isEnabled ? 'auto compact: 有効 (発火点は Claude Code 側の window 設定で決まる)' : 'auto compact: 無効'
-
-/** Paths of both lists, which one this session uses, and `check`'s verdict over both. */
-async function checkReport($: $): Promise<{ ok: boolean; text: string; lists: Located[]; chosen: ListName }> {
-  const lists = await ensureLists($)
-  const isEnabled = await isAutoCompactEnabled($)
-  const chosen = listFor(isEnabled)
-  const readings = await Promise.all(
-    lists.map(async ({ name, path }) => ({ name, problems: readList(await readText($, path), name).problems })),
-  )
-  const { ok, text } = verdict(readings)
-  const lines = [
-    ...lists.map(({ name, path, isCreated }) => `${name}: ${path}${isCreated ? '  (テンプレから作成しました)' : ''}`),
-    describeAutoCompact(isEnabled),
-    `このセッションが使うのは: ${chosen}`,
-    '',
-    text,
-  ]
-  return { ok, text: lines.join('\n'), lists, chosen }
-}
-
-/** checkReport, plus the chosen list's text verbatim: whoever reads it next edits the text they saw. */
-async function configReport($: $): Promise<string> {
-  const { text, lists, chosen } = await checkReport($)
-  const path = lists.find(({ name }) => name === chosen)?.path ?? templatePath($, chosen)
-  const body = (await readText($, path)).replace(/\n+$/, '')
-  return [text, '', `--- ${chosen} (${path})`, body === '' ? '(読めません)' : body].join('\n')
+/** Both lists as they stand now, created from the templates where absent. */
+async function listFiles($: $): Promise<ListFile[]> {
+  return Promise.all((await ensureLists($)).map(async (l) => ({ ...l, text: await readText($, l.path) })))
 }
 
 export const register: Register = (on) => {
@@ -214,11 +195,12 @@ export const register: Register = (on) => {
   // /context-notify:config reads the lists' report at the moment it is invoked.
   on('skill.prompt', { skill: CONFIG_SKILL }, async ($, e, next) => {
     const r = await next(e)
-    return { text: `${r.text}\n\n<context-notify-report>\n${await configReport($)}\n</context-notify-report>\n` }
+    const { text } = report(await listFiles($), await isAutoCompactEnabled($), true)
+    return { text: `${r.text}\n\n<context-notify-report>\n${text}\n</context-notify-report>\n` }
   }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: 'mcp__context-notify__check' }, async ($) => {
-    const { ok, text } = await checkReport($)
+    const { ok, text } = report(await listFiles($), await isAutoCompactEnabled($), false)
     return { result: ok ? text : `${text}\n\n直して、問題が無くなるまで check を繰り返してください。` }
   }).catch(() => ({ result: 'context-notify: 検証そのものに失敗しました (claude --debug の log を参照)' }))
 }

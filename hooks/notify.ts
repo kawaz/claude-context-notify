@@ -251,3 +251,33 @@ export function verdict(problems: ReadonlyArray<{ name: ListName; problems: read
   if (lines.length === 0) return { ok: true, text: '設定は妥当です。' }
   return { ok: false, text: ['設定に問題があります:', ...lines].join('\n') }
 }
+
+/** One list file as a session finds it: where it is read from, whether this call created it, and its text. */
+export type ListFile = { name: ListName; path: string; isCreated: boolean; text: string }
+
+/**
+ * What `/context-notify:config` embeds and what the check tool answers, from
+ * the same lists: both paths, whether auto compact is on, the list this
+ * session uses, and the verdict over both. With `withContents`, the used
+ * list's text follows verbatim: whoever reads it next edits the text they saw.
+ */
+export function report(lists: readonly ListFile[], isAutoCompactEnabled: boolean, withContents: boolean): {
+  ok: boolean
+  text: string
+} {
+  const chosen = listFor(isAutoCompactEnabled)
+  const { ok, text } = verdict(lists.map(({ name, text: body }) => ({ name, problems: readList(body, name).problems })))
+  const lines = [
+    ...lists.map(({ name, path, isCreated }) => `${name}: ${path}${isCreated ? '  (テンプレから作成しました)' : ''}`),
+    isAutoCompactEnabled ? 'auto compact: 有効 (発火点は Claude Code 側の window 設定で決まる)' : 'auto compact: 無効',
+    `このセッションが使うのは: ${chosen}`,
+    '',
+    text,
+  ]
+  const used = lists.find(({ name }) => name === chosen)
+  if (withContents && used !== undefined) {
+    const body = used.text.replace(/\n+$/, '')
+    lines.push('', `--- ${chosen} (${used.path})`, body === '' ? '(読めません)' : body)
+  }
+  return { ok, text: lines.join('\n') }
+}
