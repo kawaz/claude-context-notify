@@ -107,12 +107,20 @@ export function readList(text: string, name: ListName): ListReading {
       problems.push(`${where}.message は空でない文字列にしてください`)
     } else {
       for (const field of placeholderNames(message)) {
-        if (!isPlaceholder(field)) {
+        const name = /^[^:!]*/.exec(field)?.[0] ?? field
+        if (name !== field && isPlaceholder(name)) {
+          problems.push(
+            `${where}.message: {${field}} の書式指定 (${field.slice(name.length)}) は使えません。{${name}} と名前だけ書いてください`,
+          )
+        } else if (!isPlaceholder(field)) {
           problems.push(
             `${where}.message: 未知のプレースホルダ {${field}} ` +
               `(使えるのは ${PLACEHOLDERS.map((p) => `{${p}}`).join(', ')})`,
           )
         }
+      }
+      if (/[{}]/.test(message.replace(FIELD, ''))) {
+        problems.push(`${where}.message: 対になっていない波括弧があります。波括弧そのものは {{ / }} と書いてください`)
       }
     }
 

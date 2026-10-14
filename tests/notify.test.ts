@@ -200,6 +200,36 @@ describe('readList', () => {
   })
 })
 
+describe('readList: placeholder spelling', () => {
+  const problemsOf = (message: string): string[] =>
+    readList(JSON.stringify({ version: 1, notifications: [{ used_percent: 50, message }] }), 'autocompact-on').problems
+
+  test('a format spec is reported as one, naming the bare placeholder', () => {
+    expect(problemsOf('{used_tokens:,} tokens')).toEqual([
+      'notifications[0].message: {used_tokens:,} の書式指定 (:,) は使えません。{used_tokens} と名前だけ書いてください',
+    ])
+    expect(problemsOf('{used_percent!r}')).toEqual([
+      'notifications[0].message: {used_percent!r} の書式指定 (!r) は使えません。{used_percent} と名前だけ書いてください',
+    ])
+  })
+
+  test('a format spec on an unknown name is an unknown placeholder', () => {
+    expect(problemsOf('{pct:>3}')[0]).toContain('未知のプレースホルダ {pct:>3}')
+  })
+
+  test('an unpaired brace is reported; doubled braces are fine', () => {
+    const unpaired = 'notifications[0].message: 対になっていない波括弧があります。波括弧そのものは {{ / }} と書いてください'
+    expect(problemsOf('ctx {used_percent')).toEqual([unpaired])
+    expect(problemsOf('ctx } {used_percent}')).toEqual([unpaired])
+    expect(problemsOf('{used_percent}}')).toEqual([unpaired])
+    expect(problemsOf('{{literal}} {used_percent}')).toEqual([])
+  })
+
+  test('render leaves a format spec and an unpaired brace as they are', () => {
+    expect(render('{used_tokens:,} / {used_percent}% {', usage(33_000))).toBe('{used_tokens:,} / 66% {')
+  })
+})
+
 describe('verdict', () => {
   test('one line when both lists are fine', () => {
     expect(verdict([{ name: 'autocompact-on', problems: [] }, { name: 'autocompact-off', problems: [] }])).toEqual({

@@ -86,7 +86,7 @@ Both files have the same shape:
 
 - `version` — the schema version these files are written against. The check says so when it does not match the current one; nothing is migrated or overwritten for you.
 - `notifications[].used_percent` — the threshold, in percent (integers 0–100). Any number of entries, in any order (entries are grouped by value; within a value, file order is kept). An entry at `0` is delivered once, on the session's first measurement. Several entries may share a `used_percent`; their messages are joined with newlines and delivered as the single notice for that crossing.
-- `notifications[].message` — what the session is told. `{used_tokens}` (tokens used), `{used_percent}` (usage percent), `{available_tokens}` (tokens left), `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted; `{{` and `}}` are literal braces. A misspelled placeholder is left as literal text rather than breaking the session.
+- `notifications[].message` — what the session is told. `{used_tokens}` (tokens used), `{used_percent}` (usage percent), `{available_tokens}` (tokens left), `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted. Write the bare name: format specs such as `{used_tokens:,}` are not supported. Write a literal brace as `{{` or `}}`. A misspelled placeholder is left as literal text rather than breaking the session.
 
 When a file cannot be read, or has no usable entry, the bundled template is used.
 

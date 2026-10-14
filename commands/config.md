@@ -46,4 +46,4 @@ $ARGUMENTS
 - `version` — 形式のバージョン。現行と違えば check が知らせる (自分で移行しない)
 - `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、並び順は問わない、個数は自由。同じ値を複数書くと文面が改行で連結されて 1 回の通知になる。`0` はセッション最初の測定で 1 回出る
 - `notifications[].message` — 跨いだ時にセッションへ注入する文面。言語は自由
-- 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}` (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) / `{window_tokens}` (window の大きさ) の 5 つだけ。`{{` / `}}` は波括弧そのもの
+- 文面で使えるプレースホルダは `{used_tokens}` (使用トークン数) / `{used_percent}` (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) / `{window_tokens}` (window の大きさ) の 5 つだけで、`{used_tokens}` のように名前だけを書く (`{used_tokens:,}` のような書式指定は使えない)。波括弧そのものは `{{` / `}}` と書く (対になっていない `{` / `}` は check が問題として報告する)
