@@ -2,24 +2,26 @@
 
 > [English](./README.md) | 日本語
 
-動いているセッション自身に、context window をどれだけ使ったかを知らせる Claude Code
-plugin。閾値 (既定 20 / 40 / 60 / 80 / 90 / 95 / 97%) を跨いだ時だけ喋る。
+動いているセッション自身に、context window をどれだけ使ったかを知らせる Claude Code plugin。閾値 (既定 20 / 40 / 60 / 80 / 90 / 95 / 97%) を跨いだ時だけ喋る。
 
-hook だけで完結する。proxy も statusline も外部サービスも要らず、依存は `python3` のみ。
+Claude Code の Mods (TypeScript の hooks module) だけで完結する。proxy も statusline も外部サービスも外部コマンドも要らない。
 
 ## 何を解決するか
 
-長く回っているセッションは、あと何割残っているかを知らない。94% から大きな調査を始めて、
-引き継ぎの途中で切れる。数字自体は transcript と `SessionStart` の payload に存在するのに、
-それをモデルの目の前に置く仕組みが無い。
+長く回っているセッションは、あと何割残っているかを知らない。94% から大きな調査を始めて、引き継ぎの途中で切れる。数字自体は Claude Code が持っているのに、それをモデルの目の前に置く仕組みが無い。
 
-この plugin はターンごとに使用量を測り、閾値を跨いだ時にモデルが実際に読む形で注入する:
+この plugin は tool を呼ぶたびと応答の終わりに使用量を測り、閾値を跨いだ時にモデルが実際に読む形で注入する:
 
 ```
 <system-reminder>
 PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36,242 / 60,000 tokens)
 </system-reminder>
 ```
+
+## 必要なもの
+
+- Mods が使える Claude Code
+- managed settings のある (組織が管理している) 機械では、利用者が自分で入れた plugin の hook は Claude Code が走らせない。そこで使うには組織の managed settings にこの plugin を載せてもらう必要がある
 
 ## 導入
 
@@ -37,9 +39,7 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 
 ## 閾値と文面のカスタマイズ
 
-利用者が編集するのは plugin data dir に置かれた 2 ファイル
-(`autocompact-on.json` / `autocompact-off.json`) だけで、plugin を更新しても消えない。
-そこへの入口は command 1 本。
+利用者が編集するのは plugin data dir に置かれた 2 ファイル (`autocompact-on.json` / `autocompact-off.json`) だけで、plugin を更新しても消えない。置き場は `<plugins dir>/data/context-notify-context-notify/` (`<plugins dir>` は通常 `~/.claude/plugins`、`CLAUDE_CONFIG_DIR` を設定していればその下の `plugins`)。そこへの入口は command 1 本。
 
 | command | 何をするか |
 |---|---|
@@ -53,33 +53,22 @@ PostToolUse:Bash hook additional context: [context-notify] Main context usage: 6
 /context-notify:config 閾値に 70 を足して、95 と 97 は消して
 ```
 
-書き換えたあとは `ctx-notify.py check` を回し、2 ファイルとも JSON の妥当性・
-version・閾値 (0〜100 の整数)・文面の有無・プレースホルダの綴りを機械的に検査する。
+書き換えたあとは plugin が足す tool (`mcp__context-notify__check`) で、2 ファイルとも JSON の妥当性・version・閾値 (0〜100 の整数)・文面の有無・プレースホルダの綴りを機械的に検査する。
 
 ### auto compact の有効 / 無効でテンプレを切り替える
 
-auto compact が有効なセッションでは、高い帯の文面は「compact される前提で引き継ぎを
-書き出せ」であるべきで、無効なセッションでは compact 前提の文面が誤解を招く。そこで
-plugin は起動時に auto compact が有効かどうかだけを調べ、読むファイルを選び分ける。
+auto compact が有効なセッションでは、高い帯の文面は「compact される前提で引き継ぎを書き出せ」であるべきで、無効なセッションでは compact 前提の文面が誤解を招く。そこで plugin は測るたびに auto compact が有効かどうかを Claude Code 自身に訊き (`/context` の内訳と同じ判定)、読むファイルを選び分ける。
 
-| 検出結果 | 読むファイル |
+| 判定 | 読むファイル |
 |---|---|
 | 有効 | `autocompact-on.json` (compact される前提の文面) |
-| 無効 (`DISABLE_AUTO_COMPACT` / `DISABLE_COMPACT` / `autoCompactEnabled: false`) | `autocompact-off.json` |
+| 無効 | `autocompact-off.json` |
 
-有効 / 無効に関わらず同じ通知にしたければ、2 ファイルを同じ内容にする。
+判定が得られない時は有効として扱う。有効 / 無効に関わらず同じ通知にしたければ、2 ファイルを同じ内容にする。
 
-**auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window
-設定 (`window - buffer`) で決まるので、その手前で鳴らしたければ `used_percent` にその % を書く。
-有効 / 無効の判定材料は上記 env の 2 つと `autoCompactEnabled` だけ。後者は Claude Code の
-settings 優先順で探す (プロジェクトの `.claude/settings.local.json` → `.claude/settings.json`
-→ ユーザの `settings.local.json` → `settings.json`、最後の手段として `.claude.json`)。
-設定ファイルの置き場は `CLAUDE_ENV_FILE` から割り出す
-(`CLAUDE_CONFIG_DIR` は、ユーザ自身が export した時しか hook に届かないため)。判断の根拠は
-[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md)。
+**auto compact が何 % で走るかは plugin は見ない。** 発火点は Claude Code 側の window 設定で決まるので、その手前で鳴らしたければ `used_percent` にその % を書く。
 
-auto compact が走ると使用量が下がり、latch も黙って一緒に戻る。閾値が再武装されるので、
-次に帯を跨いだ時にいつもどおり通知される。
+auto compact が走ると使用量が下がり、latch も黙って一緒に戻る。閾値が再武装されるので、次に帯を跨いだ時にいつもどおり通知される。
 
 ### ファイルの形式
 
@@ -95,56 +84,38 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 }
 ```
 
-- `version` — このファイルが従う形式のバージョン。現行と違えば `check` が知らせる
-  (自動移行も上書きもしない)
-- `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、個数は自由、並び順は問わない (値ごとにまとまり、同じ値の中ではファイル内の順)。
-  `used_percent: 0` はセッション最初の応答後に 1 回出る。同じ `used_percent`
-  を複数書くと、その文面が改行で連結されて 1 回の通知としてまとめて出る
-- `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}`
-  (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) /
-  `{window_tokens}` (window の大きさ) が展開される。綴りを間違えたプレースホルダは、
-  セッションを壊さないようそのまま文字として残る
+- `version` — このファイルが従う形式のバージョン。現行と違えば検査が知らせる (自動移行も上書きもしない)
+- `notifications[].used_percent` — 閾値 (%)。0〜100 の整数、個数は自由、並び順は問わない (値ごとにまとまり、同じ値の中ではファイル内の順)。`used_percent: 0` はセッション最初の測定で 1 回出る。同じ `used_percent` を複数書くと、その文面が改行で連結されて 1 回の通知としてまとめて出る
+- `notifications[].message` — 注入する文面。`{used_tokens}` (使用トークン数) / `{used_percent}` (使用率) / `{available_tokens}` (残りトークン数) / `{available_percent}` (残り %) / `{window_tokens}` (window の大きさ) が展開される。`{{` / `}}` は波括弧そのもの。綴りを間違えたプレースホルダは、セッションを壊さないようそのまま文字として残る
 
-### window の決まり方
-
-使用率は割る相手の window 次第で意味が変わる。`[1m]` を保っている唯一の手掛かりである
-model 名は、`/clear` や `claude -p` 起点の `SessionStart` payload には載らない。そこで
-window は次の順で、最初に答えが出たものを使う。
-
-1. `CLAUDE_CONTEXT_WINDOW_TOKENS` — 明示的な上書き (動作確認にも使える)
-2. `SessionStart` / `PostModelSwitch` の `model` / `to_model` 欄 (来ている場合)
-3. 同じ claude プロセスが直前に記録した window。`CLAUDE_PID` をキーに
-   `$XDG_STATE_HOME/claude-context-notify/by-pid/` へ控えてある。`/clear` はプロセスを
-   維持したまま session id だけを差し替えるので、そこから引き継げる。終了したプロセスの
-   記録は新しい記録を書くついでに掃除される
-4. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` — Claude Code 本体が「model 名から window を判定
-   できないときに context window とみなす」変数。これを設定したセッションは、本体と
-   同じ数値で測られる
-5. 200,000 tokens
+ファイルが読めない時や、使える行が 1 つも無い時は、同梱のテンプレで動く。
 
 ## 仕組み
 
-| hook | 役割 | 何をするか |
-|---|---|---|
-| `SessionStart`, `PostModelSwitch` | `model` | window を記録し、auto compact が有効かどうかを調べる。model 名を `[1m]` 付きで持つのはこの 2 event だけ |
-| `Stop`, `PostToolUse` | `measure` | 使用量を測り、latch を動かし、帯を上に跨いでいればその場で喋る |
+| hook | 何をするか |
+|---|---|
+| `PostToolUse`, `Stop` | 使用量を測り、latch を動かし、帯を上に跨いでいればその場で喋る |
+| `session.start` | 2 ファイルが無ければテンプレから作り、古い latch を掃除し、検査用の tool を登録する |
+| `/context-notify:config` の展開時 | 2 ファイルのパス、使う側、検査結果、使う側の中身を command の prompt に埋め込む |
 
-使用量は transcript の最新の非 sidechain assistant 行の
-`input_tokens + cache_creation_input_tokens + cache_read_input_tokens` の和 = 直近の
-メインスレッドのリクエストで送った prompt 長。2 event で測るのは、transcript の
-書き込みが非同期で、`Stop` の時点ではそのターンの行がまだ無いことがあるため。
+使用量と window は Claude Code が status line に出すのと同じ値 (`$.session.usage()` の `context.tokens` / `window` / `percent`) で、直前の応答の input 側 (uncached + cache 書き込み + cache 読み出し) を model の window で割ったもの。window は Claude Code 自身が知っている値なので、`[1m]` の model も `/clear` 後も正しく割られる。
 
-`Stop` から喋ると継続ターンが 1 本起きるが、そこで読まれる prefix は既に prompt cache に
-載っているので、跨ぎ 1 回のコストは cache read と数十 token の write に収まる。
-この程度なら、どうせ起きるターンまで文面を持ち越す理由が無い。
+subagent の中で tool が呼ばれた時は測らない (使用量は main の context のもので、そこで喋ると subagent に届いてしまう)。
 
-latch は `$XDG_STATE_HOME/claude-context-notify/<session_id>.json` に band を 1 個持つだけ。
-**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が
-再武装され、かつ「下がりました」という無意味な通知も出ない。
+`Stop` から喋ると継続ターンが 1 本起きるが、そこで読まれる prefix は既に prompt cache に載っているので、跨ぎ 1 回のコストは cache read と数十 token の write に収まる。この程度なら、どうせ起きるターンまで文面を持ち越す理由が無い。継続ターンの `Stop` では測るだけで喋らない。
 
-設計判断の記録:
-[DR-0001](./docs/decisions/DR-0001-hook-only-threshold-notification.md) (hook だけで組み立てる)、
-[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md) (通知リスト 2 ファイル)。
+latch は plugin 専用の store に session ごとに band を 1 個持つだけ。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日触られていない session の latch は消える。
+
+設計判断の記録: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md)。
+
+## 開発
+
+```bash
+just lint   # claude plugin validate、tsc、JSON、command の frontmatter
+just test   # claude plugin test (tests/*.test.ts)
+```
+
+型定義は Claude Code が mod を読み込む時に `.claude-plugin/types/` へ書き出す (git 管理外)。無ければ一度 `claude --plugin-dir .` を対話で起動すると書き出される。
 
 ## ライセンス
 

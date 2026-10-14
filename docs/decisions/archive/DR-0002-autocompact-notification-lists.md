@@ -1,6 +1,6 @@
 # DR-0002: 利用者設定は data dir の通知リスト 2 ファイル、auto compact の有効 / 無効で選ぶ
 
-- Status: Active
+- Status: Superseded by DR-0003
 - Date: 2026-09-11
 - 実測環境: Claude Code v2.1.268 / macOS 25.5.0
 

@@ -1,6 +1,6 @@
 # DR-0001: context 使用率の通知は hook だけで組み立てる
 
-- Status: Active
+- Status: Superseded by DR-0003
 - Date: 2026-09-10
 
 ## Context

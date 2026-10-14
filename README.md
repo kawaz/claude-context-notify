@@ -2,25 +2,26 @@
 
 > English | [日本語](./README-ja.md)
 
-A Claude Code plugin that tells the running session how much of its context window it has
-used — once per threshold crossed (20 / 40 / 60 / 80 / 90 / 95 / 97% by default).
+A Claude Code plugin that tells the running session how much of its context window it has used — once per threshold crossed (20 / 40 / 60 / 80 / 90 / 95 / 97% by default).
 
-Hooks only. No proxy, no status line, no external service: `python3` is the whole dependency.
+Built on Claude Code's Mods (a TypeScript hooks module) alone. No proxy, no status line, no external service, no external command.
 
 ## What it solves
 
-A long-running session has no idea how much room it has left. It keeps starting large
-investigations at 94% and gets cut off mid-handoff. The numbers exist — in the transcript and
-in the `SessionStart` payload — but nothing puts them in front of the model.
+A long-running session has no idea how much room it has left. It keeps starting large investigations at 94% and gets cut off mid-handoff. Claude Code has the numbers, but nothing puts them in front of the model.
 
-This plugin measures usage after every turn and, when a threshold is crossed, injects a line
-the model actually reads:
+This plugin measures usage after every tool call and at the end of every response and, when a threshold is crossed, injects a line the model actually reads:
 
 ```
 <system-reminder>
 PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36,242 / 60,000 tokens)
 </system-reminder>
 ```
+
+## Requirements
+
+- A Claude Code with Mods.
+- On a machine whose Claude Code is managed by an organization (managed settings), Claude Code does not run the hooks of a plugin you installed yourself. To use it there, the organization has to list this plugin in its managed settings.
 
 ## Quick Start
 
@@ -38,8 +39,7 @@ Then, to see (and create) your config:
 
 ## Configuring thresholds and wording
 
-Everything you can configure lives in two files in the plugin data directory, so it survives
-plugin updates: `autocompact-on.json` and `autocompact-off.json`. One command reaches them.
+Everything you can configure lives in two files in the plugin data directory, so it survives plugin updates: `autocompact-on.json` and `autocompact-off.json`, under `<plugins dir>/data/context-notify-context-notify/` (`<plugins dir>` is normally `~/.claude/plugins`, or `plugins` under `CLAUDE_CONFIG_DIR` when you set it). One command reaches them.
 
 | Command | What it does |
 |---|---|
@@ -53,36 +53,22 @@ Read them, or ask in words:
 /context-notify:config add a 70 threshold and drop 95 and 97
 ```
 
-After editing, it runs `ctx-notify.py check`, which verifies both files — the JSON, the
-schema version, the thresholds (integers 0–100), the presence of messages, and the
-spelling of every placeholder.
+After editing, a tool the plugin adds (`mcp__context-notify__check`) verifies both files — the JSON, the schema version, the thresholds (integers 0–100), the presence of messages, and the spelling of every placeholder.
 
 ### Adapting to auto-compact
 
-When auto-compact is on, the high bands should be telling you to write a handoff before the
-conversation is summarised away; when it is off, that wording is just misleading. So the
-plugin checks one thing at startup — whether auto-compact is enabled — and reads the list
-that matches.
+When auto-compact is on, the high bands should be telling you to write a handoff before the conversation is summarised away; when it is off, that wording is just misleading. So on every measurement the plugin asks Claude Code itself whether auto-compact is enabled (the same answer `/context` breaks down) and reads the list that matches.
 
-| Detected | List read |
+| Answer | List read |
 |---|---|
 | Enabled | `autocompact-on.json` (wording that assumes a compaction is coming) |
-| Disabled (`DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, `autoCompactEnabled: false`) | `autocompact-off.json` |
+| Disabled | `autocompact-off.json` |
 
-To get the same notifications either way, give both files the same contents.
+Without an answer, auto-compact is taken as enabled. To get the same notifications either way, give both files the same contents.
 
-**The plugin does not work out where auto-compact fires.** That point is set by Claude Code's
-own window setting (`window - buffer`), so if you want a band just before it, put that percent
-in `used_percent` yourself. The on/off answer comes from the two environment variables above and from
-`autoCompactEnabled`, looked up in Claude Code's own settings order — the project's
-`.claude/settings.local.json` and `.claude/settings.json`, then your `settings.local.json` and
-`settings.json`, with `.claude.json` as a last resort. The config directory is located from
-`CLAUDE_ENV_FILE`, since `CLAUDE_CONFIG_DIR` only reaches hooks when you export it yourself.
-The reasoning is recorded in
-[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md).
+**The plugin does not work out where auto-compact fires.** That point is set by Claude Code's own window setting, so if you want a band just before it, put that percent in `used_percent` yourself.
 
-When auto-compact does fire, usage drops and the latch silently rewinds with it, so the
-thresholds re-arm and the next crossing is announced as usual.
+When auto-compact does fire, usage drops and the latch silently rewinds with it, so the thresholds re-arm and the next crossing is announced as usual.
 
 ### List format
 
@@ -98,57 +84,38 @@ Both files have the same shape:
 }
 ```
 
-- `version` — the schema version these files are written against. `check` says so when it
-  does not match the current one; nothing is migrated or overwritten for you.
-- `notifications[].used_percent` — the threshold, in percent (0–100). Any number of entries,
-  in any order (entries are grouped by value; within a value, file order is kept). An entry at `0` is delivered once, after the session's first response. Several entries may share a `used_percent`; their messages are joined with
-  newlines and delivered as the single notice for that crossing.
-- `notifications[].message` — what the session is told. `{used_tokens}` (tokens used),
-  `{used_percent}` (usage percent), `{available_tokens}` (tokens left),
-  `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted.
-  A misspelled placeholder is left as literal text rather than breaking the session.
+- `version` — the schema version these files are written against. The check says so when it does not match the current one; nothing is migrated or overwritten for you.
+- `notifications[].used_percent` — the threshold, in percent (integers 0–100). Any number of entries, in any order (entries are grouped by value; within a value, file order is kept). An entry at `0` is delivered once, on the session's first measurement. Several entries may share a `used_percent`; their messages are joined with newlines and delivered as the single notice for that crossing.
+- `notifications[].message` — what the session is told. `{used_tokens}` (tokens used), `{used_percent}` (usage percent), `{available_tokens}` (tokens left), `{available_percent}` (percent left) and `{window_tokens}` (window size) are substituted; `{{` and `}}` are literal braces. A misspelled placeholder is left as literal text rather than breaking the session.
 
-### How the context window is resolved
-
-The percentage is only as good as the window it divides by, and the model name — the one
-place the `[1m]` suffix survives — is missing from some `SessionStart` payloads (`/clear`
-and `claude -p` starts). So the window comes from the first of these that answers:
-
-1. `CLAUDE_CONTEXT_WINDOW_TOKENS` — an explicit override (also handy for testing).
-2. The `model` / `to_model` field of `SessionStart` / `PostModelSwitch`, when it is there.
-3. The window the same claude process recorded earlier, keyed by `CLAUDE_PID` under
-   `$XDG_STATE_HOME/claude-context-notify/by-pid/`. `/clear` keeps the process and only
-   changes the session id, so the window carries over. Records of processes that are gone
-   are swept away as new ones are written.
-4. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` — the variable Claude Code itself treats as the context
-   window when it cannot derive one from the model name, so a session that sets it is
-   measured against the same number the app uses.
-5. 200,000 tokens.
+When a file cannot be read, or has no usable entry, the bundled template is used.
 
 ## How it works
 
-| Hook | Role | What it does |
-|---|---|---|
-| `SessionStart`, `PostModelSwitch` | `model` | Records the context window and whether auto-compact is enabled. Only these events spell the model with its `[1m]` suffix. |
-| `Stop`, `PostToolUse` | `measure` | Reads usage, moves the latch, and speaks on the spot when the latch just moved up into a band. |
+| Hook | What it does |
+|---|---|
+| `PostToolUse`, `Stop` | Measures usage, moves the latch, and speaks on the spot when the latch just moved up into a band. |
+| `session.start` | Creates the two files from the templates when absent, sweeps old latches, and registers the check tool. |
+| When `/context-notify:config` expands | Embeds both paths, the list in use, the check's verdict and that list's contents in the command's prompt. |
 
-Usage is the sum of `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` on
-the newest non-sidechain assistant line of the transcript — the prompt length of the last
-main-thread request. Measuring on both events covers the transcript's asynchronous writes,
-which sometimes leave `Stop` reading a turn that isn't there yet.
+Usage and window are the figures Claude Code shows in its status line (`$.session.usage()`'s `context.tokens` / `window` / `percent`): the input side of the last response (uncached + cache written + cache read) over the model's window. The window is Claude Code's own, so a `[1m]` model is measured correctly, after `/clear` too.
 
-Speaking from `Stop` wakes one continuation turn, but the prefix it reads is already in the
-prompt cache, so the crossing costs a cache read plus a few dozen written tokens. That is
-cheap enough that there is no reason to hold a message back for a turn that was going to
-happen anyway.
+A tool call inside a subagent is not measured: the usage is the main context's, and a notice there would reach the subagent.
 
-The latch is a single band in `$XDG_STATE_HOME/claude-context-notify/<session_id>.json`.
-It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact`
-or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice.
+Speaking from `Stop` wakes one continuation turn, but the prefix it reads is already in the prompt cache, so the crossing costs a cache read plus a few dozen written tokens. That is cheap enough that there is no reason to hold a message back for a turn that was going to happen anyway. The continuation turn's own `Stop` measures without speaking.
 
-Design rationale:
-[DR-0001](./docs/decisions/DR-0001-hook-only-threshold-notification.md) (hook-only design) and
-[DR-0002](./docs/decisions/DR-0002-autocompact-notification-lists.md) (the two notification lists).
+The latch is a single band per session in the plugin's own store. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. Latches untouched for 30 days are removed.
+
+Design rationale: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md).
+
+## Development
+
+```bash
+just lint   # claude plugin validate, tsc, JSON, command frontmatter
+just test   # claude plugin test (tests/*.test.ts)
+```
+
+The type definitions are written by Claude Code into `.claude-plugin/types/` (not tracked) when it loads the mod. If they are missing, start `claude --plugin-dir .` interactively once and they are written.
 
 ## License
 
