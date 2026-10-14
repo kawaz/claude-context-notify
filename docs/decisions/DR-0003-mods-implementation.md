@@ -14,19 +14,20 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 | 確かめたこと | 結果 |
 |---|---|
-| 使用量の取り方 | `$.session.usage()` の `context.tokens / window / percent` は、`classic.PostToolUse` / `classic.Stop` の時点で直前の応答の値になっている。transcript の書き込みを待つ遅れが無い |
+| 使用量の取り方 | `$.session.usage()` の `context.tokens / window / percent` は、tool の実行後 (`tool.call` の `next(e)` の後) の時点で直前の応答の値になっている。transcript の書き込みを待つ遅れが無い |
 | window | `context.window` は model 名に `[1m]` が無い経路 (`/clear` 後、`-p` 起動) でも正しい window を返す |
 | auto compact の有効 / 無効 | `$.session.usage({ breakdown: "summary" })` の `context.breakdown.isAutoCompactEnabled` が Claude Code 自身の判定を返す。数 ms で済む |
 | `$.state` | `/clear` でも resume でも消える |
 | `$.store` | session と reload を跨いで残る。plugin 専用の KV、全体で JSON 4 MiB まで |
 | data dir | `$.plugin.root` が `<plugins>/cache/<marketplace>/<plugin>/<version>` のとき、`<plugins>/data/<plugin>-<marketplace>` が command hook に渡る `CLAUDE_PLUGIN_DATA` と一致する。`--plugin-dir` で読んだ時は root がこの形にならない |
-| subagent 内の `PostToolUse` | subagent の tool 呼び出しでも main と同じ session の `classic.PostToolUse` が発火し (`e.agent_id` 付き)、そこで返した `additionalContext` は subagent に届く |
-| `PostToolUse` の並行 | 並列の tool 呼び出しでは `PostToolUse` が並行に走りうる (型定義の記述) |
+| tool の結果への注入 | `tool.call` で `next(e)` の結果の `context` に足した文字列は、command hook の `additionalContext` と同じ reminder (transcript では `hook_additional_context`、`hookName: tool.call`) として model に届く |
+| subagent 内の tool 呼び出し | subagent の tool 呼び出しでも同じ module の `tool.call` が走り、`e.agentId` が付く (Bash も `SubagentHandback` も)。そこで返した通知は subagent に届く (`classic.PostToolUse` の `additionalContext` で確認した) |
+| 並列の tool 呼び出し | 1 つの応答で並列に呼んだ tool の `tool.call` は並行に終わる (3 本が 12 ms 以内に settle) |
 | command への注入 | plugin の `.md` (prompt 型) command では、`command.run` で `next(e)` の後に足した `context` は捨てられる (debug log: `a hook's own answer after next() dropped`)。`skill.prompt` で返した `text` は model が読む prompt そのものになる |
 | model が呼べる tool | `$.tool.register` で `mcp__<plugin>__<name>` を足し、`tool.call` hook が `{ result }` を返せば、command の `allowed-tools` に書いて `-p` でも呼べる |
 | npm パッケージ | hooks module が import できるのは自分のファイル (相対パス) と `claude-code` だけ。パッケージ名の import は `claude plugin validate` が拒む |
-| テスト | `claude plugin test` で `tests/*.test.ts` が engine 上で走る。`../hooks/*.ts` の純粋関数を直接呼べ、hook も `$.classic.PostToolUse(...)` 等で起こして、`$` の下 (`fs.*` / `session.usage` / `mock.store` / `mock.clock` / `mock.env`) をテストが答えられる |
-| 組織管理下 | `claude plugin validate` の注記: managed settings のある機械では、利用者が自分で入れた plugin の `classic.*` / `skill.prompt` hook は走らない (組織が managed settings に載せた plugin だけが走らせる) |
+| テスト | `claude plugin test` で `tests/*.test.ts` が engine 上で走る。`../hooks/*.ts` の純粋関数を直接呼べ、hook も `$.tool.call(...)` 等で起こして、`$` の下 (`fs.*` / `session.usage` / `session.id` / `tool.call` / `mock.store` / `mock.clock` / `mock.env`) をテストが答えられる |
+| 組織管理下 | `claude plugin validate` の注記: managed settings のある機械では、利用者が自分で入れた plugin の `classic.*` / `skill.prompt` hook は走らない (組織が managed settings に載せた plugin だけが走らせる)。`tool.call` / `session.start` はこの注記の対象に入らない |
 
 ## Decision
 
@@ -36,22 +37,20 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 **statusline は使わない。** `context_window.used_percentage` を完成品で持つが、plugin の `settings.json` で配れず、利用者自身の statusline を奪う。**外部 proxy も使わない。** その proxy を持たない環境では何も動かない。
 
-### 2. `PostToolUse` と `Stop` で測り、跨いでいればその場で喋る
+### 2. main loop の tool 呼び出しの後で測り、跨いでいれば tool の結果に添える
 
-`classic.PostToolUse` と `classic.Stop` の両方で `$.session.usage()` を呼び、帯を上に跨いだなら `next(e)` の結果の `additionalContext` の末尾に `[context-notify] <文面>` を足して返す。
+`tool.call` で `next(e)` (tool の実行) の後に `$.session.usage()` を呼び、帯を上に跨いだなら結果の `context` の末尾に `[context-notify] <文面>` を足して返す。model はそれを tool の結果の直後の reminder として読む。
 
 - 閾値の判定は `context.percent` (engine が四捨五入した整数) で行う。`tokens` か `percent` が無い時 (live window の最初の応答の前、compact 直後) は何もしない。latch も動かさない
 - window は `context.window` をそのまま使う
-- `e.agent_id` がある (subagent 内での発火) 時は、計測も latch の更新もせず `next(e)` の結果をそのまま返す。測る値は main の context で、注入は subagent に届いてしまうため
-- `Stop` で `stop_hook_active` が真の時は、latch を動かすだけで喋らない。継続ターンは自分の通知が起こしたもので、喋ると繰り返しになる
-- 計測は module 内で 1 本ずつ直列に走らせる。並列の `PostToolUse` が同じ古い latch を読んで同じ帯を 2 回喋らないため
-- 各 hook は registration の `.catch(($, e, next) => next(e))` を持つ。計測が失敗しても event には何も足さず、下の hook の答えをそのまま返す
+- `e.agentId` がある (subagent の loop の呼び出し) 時は、計測も latch の更新もせず `next(e)` の結果をそのまま返す。測る値は main の context で、通知は subagent に届いてしまうため
+- 拒否された呼び出し (`deny`) と失敗した呼び出し (`isError`) の結果はそのまま返す
+- 計測は module 内で 1 本ずつ直列に走らせる。並列の tool 呼び出しが同じ古い latch を読んで同じ帯を 2 回喋らないため
+- hook は registration の `.catch(($, e, next) => next(e))` を持つ。計測が失敗しても結果には何も足さず、下の hook の答えをそのまま返す
 
-**キューを持たず即時に出す。** `Stop` から喋ると継続ターンが 1 本起きるが、そのターンが読む prefix は既に prompt cache に載っているため、跨ぎ 1 回あたりのコストは cache read と数十 token の write に収まる。どうせ起きる次のターンに相乗りさせる機構を持つ意味が無い。
+**応答の終わりでは測らない。** 通知は tool の結果に添えて届くので、そのために余分なターンを起こさない。tool を呼ばない応答の途中で帯を跨いだ分は、次の tool 呼び出しで届く。
 
 **`UserPromptSubmit` は使わない。** 外部注入や別セッションからのメッセージが起点のターンでは発火しない経路があり、配達をこれに依存すると通知が落ちる。
-
-**`block` ではなく `additionalContext` を使う。** `block` は「turn を止めて理由を伝える」意味論で、使用率の報告はエラーではない。
 
 **compact 専用の通知は持たない。** compact で使用量が下がれば下記 3 の規則で latch が黙って戻り、次に帯を跨いだ時に通常の通知が出る。
 
@@ -101,7 +100,7 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 - 見せる素材は invoke 時に埋め込む。`skill.prompt` を `{ skill: "context-notify:config" }` で hook し、展開された prompt の末尾に `<context-notify-report>` ブロック (2 ファイルのパス、auto compact の有効 / 無効、使う側、2 ファイルの検証結果、使う側の中身) を足す。model が素材を取りに行く往復を挟まない
 - 編集後の検証は model の目視ではなく、`$.tool.register` で足す `mcp__context-notify__check` が行う。JSON の妥当性、version、閾値が 0〜100 の整数、各行に文面がある、プレースホルダの綴り。問題を文で返し、model は通るまで直す
 - 埋め込む報告と check の答えは同じ純粋関数 (`report`) が作る。違いは使う側の中身を付けるかどうかだけ
-- 埋め込みが届かない環境向けの別経路は持たない。そういう環境 (下記 Consequences の組織管理下) では計測の hook も走らず、config だけ動いても plugin としては働かない。経路が 2 本あると手順書が分岐して読みにくくなる
+- 埋め込みが届かない環境 (下記 Consequences の組織管理下) 向けの別経路は持たない。経路が 2 本あると手順書が分岐して読みにくくなる
 
 ### 7. 外から来るデータは境界で手書きの parse を通す
 
@@ -111,13 +110,13 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 ### 8. テストは `claude plugin test`
 
-判定の純粋関数 (帯の解決、帯の判定、latch の遷移、文面の展開、通知リストの検証、data dir) は `tests/notify.test.ts` で直接呼ぶ。hook の振る舞い (subagent、`stop_hook_active`、未計測、並列、リストの選択、テンプレからの作成、latch の掃除、config の埋め込みと check) は `tests/register.test.ts` で engine に hook を起こさせ、`$` の下をテストが答える。
+判定の純粋関数 (帯の解決、帯の判定、latch の遷移、文面の展開、通知リストの検証、data dir) は `tests/notify.test.ts` で直接呼ぶ。hook の振る舞い (subagent、拒否・失敗した呼び出し、未計測、並列、リストの選択、テンプレからの作成、latch の掃除、config の埋め込みと check) は `tests/register.test.ts` で engine に hook を起こさせ、`$` の下をテストが答える。
 
 ## Alternatives Considered
 
-- **command hook (外部スクリプト) のまま**: 使用量を transcript から読むと、書き込みが非同期なので `Stop` の時点でそのターンの行がまだ無いことがある。window を model 名の `[1m]` から推すと `/clear` や `-p` の起動で外れ、auto compact の有効 / 無効を settings ファイルから推すと Claude Code 自身の判定とずれうる。Mods なら 3 つとも engine の値をそのまま読める
+- **command hook (外部スクリプト) のまま**: 使用量を transcript から読むと、書き込みが非同期なので応答の終わりの時点でそのターンの行がまだ無いことがある。window を model 名の `[1m]` から推すと `/clear` や `-p` の起動で外れ、auto compact の有効 / 無効を settings ファイルから推すと Claude Code 自身の判定とずれうる。Mods なら 3 つとも engine の値をそのまま読める
 - **statusline から `used_percentage` を読む**: plugin で配れない (上記 1)
-- **`pending` キューに積んで次のターンに相乗りさせる**: 継続ターン 1 本は cache read + 数十 token でしかない。通知が遅れるうえ、配達役の event を配線し続ける必要がある
+- **`classic.PostToolUse` / `classic.Stop` で測る**: managed settings のある機械では、利用者が入れた plugin の `classic.*` hook が走らない (Context の validate の注記)。`Stop` から喋ると継続ターンが 1 本起きる
 - **帯の高さで即時 / 相乗りを出し分ける**: 相乗りが要らないなら出し分けも要らない
 - **`UserPromptSubmit` を配達に使う**: 外部注入や別セッションからのメッセージが起点のターンでは発火しない経路がある
 - **`PreCompact` で compact を知らせる**: latch の巻き戻しだけで足りる
@@ -129,7 +128,7 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 ## Consequences
 
 - 依存は Claude Code の Mods だけ。proxy / 外部サービス / statusline / 外部コマンドを要求しない
-- managed settings のある機械では、利用者が自分で入れたこの plugin の `classic.*` / `skill.prompt` hook は走らない。そこで使うには組織が managed settings に載せる必要がある
+- managed settings のある機械では、利用者が自分で入れたこの plugin の `skill.prompt` hook は走らず、`/context-notify:config` に報告が埋め込まれない。通知と check tool は動く。config まで使うには組織が managed settings に載せる必要がある
 - 使用量は直前の応答の input 側 (uncached + cache 書き込み + cache 読み出し) で、これから送るリクエストの分は含まない。閾値通知の用途では実害が無い
 - 1M window では ~96.7% で auto compact が走るため、既定の 97% 帯は auto compact とほぼ同着になる。本人が自分で畳むための実効的な最終警告は 95% 帯
 - どの % で auto compact が走るかは plugin からは見ない。発火点の手前で鳴らしたい利用者は自分で `used_percent` を調整する
@@ -138,5 +137,4 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 ## 関連
 
-- https://code.claude.com/docs/en/hooks — classic hook event の一次情報
 - Claude Code 同梱の型定義 (`.claude-plugin/types/claude-code/index.d.ts`、engine が書き出す)

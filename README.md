@@ -10,18 +10,18 @@ Built on Claude Code's Mods (a TypeScript hooks module) alone. No proxy, no stat
 
 A long-running session has no idea how much room it has left. It keeps starting large investigations at 94% and gets cut off mid-handoff. Claude Code has the numbers, but nothing puts them in front of the model.
 
-This plugin measures usage after every tool call and at the end of every response and, when a threshold is crossed, injects a line the model actually reads:
+This plugin measures usage after every tool call of the main conversation and, when a threshold is crossed, injects a line the model actually reads:
 
 ```
 <system-reminder>
-PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
+tool.call hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
 </system-reminder>
 ```
 
 ## Requirements
 
 - A Claude Code with Mods.
-- On a machine whose Claude Code is managed by an organization (managed settings), Claude Code does not run the hooks of a plugin you installed yourself. To use it there, the organization has to list this plugin in its managed settings.
+- On a machine whose Claude Code is managed by an organization (managed settings), Claude Code does not run this plugin's `skill.prompt` hook when you installed the plugin yourself, so `/context-notify:config` gets no report embedded. The notifications and the check tool still work. For the full plugin there, the organization has to list it in its managed settings.
 
 ## Quick Start
 
@@ -94,15 +94,15 @@ When a file cannot be read, or has no usable entry, the bundled template is used
 
 | Hook | What it does |
 |---|---|
-| `PostToolUse`, `Stop` | Measures usage, moves the latch, and speaks on the spot when the latch just moved up into a band. |
+| `tool.call` (after the tool ran) | Measures usage, moves the latch, and, when the latch just moved up into a band, adds the notice to the tool's result. |
 | `session.start` | Creates the two files from the templates when absent, sweeps old latches, and registers the check tool. |
 | When `/context-notify:config` expands | Embeds both paths, the list in use, the check's verdict and that list's contents in the command's prompt. |
 
 Usage and window are the figures Claude Code shows in its status line (`$.session.usage()`'s `context.tokens` / `window` / `percent`): the input side of the last response (uncached + cache written + cache read) over the model's window. The window is Claude Code's own, so a `[1m]` model is measured correctly, after `/clear` too.
 
-A tool call inside a subagent is not measured: the usage is the main context's, and a notice there would reach the subagent.
+A tool call inside a subagent is not measured: the usage is the main context's, and a notice there would reach the subagent. Nor is a refused or failed call.
 
-Speaking from `Stop` wakes one continuation turn, but the prefix it reads is already in the prompt cache, so the crossing costs a cache read plus a few dozen written tokens. That is cheap enough that there is no reason to hold a message back for a turn that was going to happen anyway. The continuation turn's own `Stop` measures without speaking.
+The notice rides on the tool's result, so it never wakes an extra turn. A crossing during a response that calls no tool is announced with the next tool call.
 
 The latch is a single band per session in the plugin's own store. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. A session's latch is removed after 30 days without a measurement (a session that stays in one band still records that it was measured, once a day).
 

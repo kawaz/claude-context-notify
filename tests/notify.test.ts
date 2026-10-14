@@ -53,31 +53,26 @@ describe('resolveBands / bandOf', () => {
 
 describe('advance (the latch)', () => {
   test('first measurement speaks the band it lands in', () => {
-    expect(advance(undefined, usage(33_000), BANDS, true)).toEqual({
+    expect(advance(undefined, usage(33_000), BANDS)).toEqual({
       band: 60,
       message: 'ctx 66% (33000 / 50000 tokens)',
     })
   })
 
   test('the same band stays silent and leaves the latch alone', () => {
-    expect(advance(60, usage(33_000), BANDS, true)).toBeUndefined()
+    expect(advance(60, usage(33_000), BANDS)).toBeUndefined()
   })
 
   test('rising speaks only the highest band reached', () => {
-    expect(advance(20, usage(48_600), BANDS, true)).toEqual({ band: 97, message: 'ctx 97% (48600 / 50000 tokens)' })
+    expect(advance(20, usage(48_600), BANDS)).toEqual({ band: 97, message: 'ctx 97% (48600 / 50000 tokens)' })
   })
 
   test('falling moves the latch back without a word', () => {
-    expect(advance(97, usage(5_000), BANDS, true)).toEqual({ band: 0 })
+    expect(advance(97, usage(5_000), BANDS)).toEqual({ band: 0 })
   })
 
   test('rising again after a fall speaks again', () => {
-    expect(advance(0, usage(33_000), BANDS, true)?.message).toBe('ctx 66% (33000 / 50000 tokens)')
-  })
-
-  test('a continuation turn the notice caused moves the latch but does not speak', () => {
-    expect(advance(undefined, usage(48_600), BANDS, false)).toEqual({ band: 97 })
-    expect(advance(97, usage(48_600), BANDS, true)).toBeUndefined()
+    expect(advance(0, usage(33_000), BANDS)?.message).toBe('ctx 66% (33000 / 50000 tokens)')
   })
 
   test('a 0 threshold is crossed by the first measurement only', () => {
@@ -85,11 +80,11 @@ describe('advance (the latch)', () => {
       { usedPercent: 0, message: 'ZERO {used_percent}%' },
       { usedPercent: 60, message: 'SIXTY' },
     ])
-    expect(advance(undefined, usage(5_000), bands, true)).toEqual({ band: 0, message: 'ZERO 10%' })
-    expect(advance(0, usage(5_000), bands, true)).toBeUndefined()
-    expect(advance(0, usage(33_000), bands, true)).toEqual({ band: 60, message: 'SIXTY' })
-    expect(advance(60, usage(5_000), bands, true)).toEqual({ band: 0 })
-    expect(advance(0, usage(6_000), bands, true)).toBeUndefined()
+    expect(advance(undefined, usage(5_000), bands)).toEqual({ band: 0, message: 'ZERO 10%' })
+    expect(advance(0, usage(5_000), bands)).toBeUndefined()
+    expect(advance(0, usage(33_000), bands)).toEqual({ band: 60, message: 'SIXTY' })
+    expect(advance(60, usage(5_000), bands)).toEqual({ band: 0 })
+    expect(advance(0, usage(6_000), bands)).toBeUndefined()
   })
 })
 

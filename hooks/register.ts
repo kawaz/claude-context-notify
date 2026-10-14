@@ -1,6 +1,6 @@
 // Tell the running session how much of its context window it has used, once
-// per threshold crossed. Measures at PostToolUse and Stop; the decisions
-// themselves are in notify.ts.
+// per threshold crossed. Measures after each tool call of the main loop; the
+// decisions themselves are in notify.ts.
 
 import type { EngineInterface, Register } from 'claude-code'
 import {
@@ -107,13 +107,8 @@ async function isAutoCompactEnabled($: $): Promise<boolean> {
   return context.breakdown?.isAutoCompactEnabled ?? true
 }
 
-/**
- * Measure, move the latch, and return what to say, if anything.
- *
- * `maySpeak` is false on a Stop that the plugin's own notice caused: measuring
- * again is fine, speaking again would loop.
- */
-async function measure($: $, sessionId: string, maySpeak: boolean): Promise<string | undefined> {
+/** Measure, move the latch, and return what to say, if anything. */
+async function measure($: $): Promise<string | undefined> {
   const { context } = await $.session.usage({ breakdown: 'summary' })
   const { tokens, window, percent } = context
   // Before the first response of a live window (a fresh session, one just
@@ -124,10 +119,10 @@ async function measure($: $, sessionId: string, maySpeak: boolean): Promise<stri
   const bands = resolveBands((await loadList($, name)).entries)
   if (bands.size === 0) return undefined
 
-  const key = latchKey(sessionId)
+  const key = latchKey(await $.session.id())
   const now = await $.clock.now()
   const held = await readLatch($, key)
-  const step = advance(held?.band, { tokens, window, percent }, bands, maySpeak)
+  const step = advance(held?.band, { tokens, window, percent }, bands)
   if (step === undefined) {
     // Same band: the latch stands, but the sweep goes by `updatedAt`, so a
     // session that stays in one band must still be seen as alive.
@@ -138,7 +133,7 @@ async function measure($: $, sessionId: string, maySpeak: boolean): Promise<stri
   return step.message
 }
 
-// PostToolUse fires per tool and may run concurrently for parallel tool calls.
+// Parallel tool calls finish concurrently, each with its own tool.call.
 // Measurements go one at a time so two of them never both read the old latch
 // and both speak the same band.
 let queue: Promise<unknown> = Promise.resolve()
@@ -184,20 +179,15 @@ export const register: Register = (on) => {
 
   // A failed measurement must not cost the event anything: each hook below
   // falls back to what the hooks beneath it answered (`next` replays it).
-  on('classic.PostToolUse', async ($, e, next) => {
+  // The notice rides on the tool's result as context: the model reads it as
+  // one reminder after the result. A subagent's call is left alone (the usage
+  // is the main loop's, and the notice would reach the subagent), as is a
+  // refused or failed call, whose result takes no context.
+  on('tool.call', async ($, e, next) => {
     const r = await next(e)
-    // A subagent's tool call: the usage is the main thread's, and a notice
-    // here would reach the subagent instead of the session it belongs to.
-    if (e.agent_id !== undefined) return r
-    const notice = await oneAtATime(() => measure($, e.session_id, true))
-    return notice === undefined ? r : { ...r, additionalContext: [...(r.additionalContext ?? []), PREFIX + notice] }
-  }).catch(($, e, next) => next(e))
-
-  on('classic.Stop', async ($, e, next) => {
-    const r = await next(e)
-    if (e.agent_id !== undefined) return r
-    const notice = await oneAtATime(() => measure($, e.session_id, !e.stop_hook_active))
-    return notice === undefined ? r : { ...r, additionalContext: [...(r.additionalContext ?? []), PREFIX + notice] }
+    if (e.agentId !== undefined || r.deny !== undefined || r.isError === true) return r
+    const notice = await oneAtATime(() => measure($))
+    return notice === undefined ? r : { ...r, context: [...(r.context ?? []), PREFIX + notice] }
   }).catch(($, e, next) => next(e))
 
   // /context-notify:config reads the lists' report at the moment it is invoked.

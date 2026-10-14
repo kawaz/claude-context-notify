@@ -163,15 +163,14 @@ export type Step = { band: number; message?: string }
  * No latch yet means nothing has been measured in this session, which is what
  * makes a 0 band reachable: it is crossed by the first measurement. Going down
  * means a compact or a clear reset the usage, so the latch moves back without
- * a word. Going up into a band speaks that band, unless `maySpeak` is false (a
- * continuation turn the plugin's own notice caused, where speaking would loop).
+ * a word. Going up into a band speaks that band.
  */
-export function advance(prev: number | undefined, usage: Usage, bands: Bands, maySpeak: boolean): Step | undefined {
+export function advance(prev: number | undefined, usage: Usage, bands: Bands): Step | undefined {
   const from = prev ?? -1
   const band = bandOf(usage.percent, bands)
   if (band === from) return undefined
   const template = bands.get(band)
-  if (!maySpeak || band < from || template === undefined) return { band }
+  if (band < from || template === undefined) return { band }
   return { band, message: render(template, usage) }
 }
 

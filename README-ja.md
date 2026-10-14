@@ -10,18 +10,18 @@ Claude Code の Mods (TypeScript の hooks module) だけで完結する。proxy
 
 長く回っているセッションは、あと何割残っているかを知らない。94% から大きな調査を始めて、引き継ぎの途中で切れる。数字自体は Claude Code が持っているのに、それをモデルの目の前に置く仕組みが無い。
 
-この plugin は tool を呼ぶたびと応答の終わりに使用量を測り、閾値を跨いだ時にモデルが実際に読む形で注入する:
+この plugin はメインの会話で tool を呼ぶたびに使用量を測り、閾値を跨いだ時にモデルが実際に読む形で注入する:
 
 ```
 <system-reminder>
-PostToolUse:Bash hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
+tool.call hook additional context: [context-notify] Main context usage: 60% (36242 / 60000 tokens)
 </system-reminder>
 ```
 
 ## 必要なもの
 
 - Mods が使える Claude Code
-- managed settings のある (組織が管理している) 機械では、利用者が自分で入れた plugin の hook は Claude Code が走らせない。そこで使うには組織の managed settings にこの plugin を載せてもらう必要がある
+- managed settings のある (組織が管理している) 機械では、利用者が自分で入れた plugin の `skill.prompt` hook を Claude Code が走らせないので、`/context-notify:config` に報告が埋め込まれない。通知と検査用の tool は動く。そこで全部を使うには組織の managed settings にこの plugin を載せてもらう必要がある
 
 ## 導入
 
@@ -94,15 +94,15 @@ auto compact が走ると使用量が下がり、latch も黙って一緒に戻�
 
 | hook | 何をするか |
 |---|---|
-| `PostToolUse`, `Stop` | 使用量を測り、latch を動かし、帯を上に跨いでいればその場で喋る |
+| `tool.call` (tool の実行後) | 使用量を測り、latch を動かし、帯を上に跨いでいれば tool の結果に通知を添える |
 | `session.start` | 2 ファイルが無ければテンプレから作り、古い latch を掃除し、検査用の tool を登録する |
 | `/context-notify:config` の展開時 | 2 ファイルのパス、使う側、検査結果、使う側の中身を command の prompt に埋め込む |
 
 使用量と window は Claude Code が status line に出すのと同じ値 (`$.session.usage()` の `context.tokens` / `window` / `percent`) で、直前の応答の input 側 (uncached + cache 書き込み + cache 読み出し) を model の window で割ったもの。window は Claude Code 自身が知っている値なので、`[1m]` の model も `/clear` 後も正しく割られる。
 
-subagent の中で tool が呼ばれた時は測らない (使用量は main の context のもので、そこで喋ると subagent に届いてしまう)。
+subagent の中で tool が呼ばれた時は測らない (使用量は main の context のもので、そこで喋ると subagent に届いてしまう)。拒否された呼び出しと失敗した呼び出しも測らない。
 
-`Stop` から喋ると継続ターンが 1 本起きるが、そこで読まれる prefix は既に prompt cache に載っているので、跨ぎ 1 回のコストは cache read と数十 token の write に収まる。この程度なら、どうせ起きるターンまで文面を持ち越す理由が無い。継続ターンの `Stop` では測るだけで喋らない。
+通知は tool の結果に添えて届くので、そのために余分なターンは起きない。tool を呼ばない応答の途中で帯を跨いだ分は、次に tool を呼んだ時に届く。
 
 latch は plugin 専用の store に session ごとに band を 1 個持つだけ。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日計測されていない session の latch は消える (同じ帯のままでも、計測があれば 1 日ごとに時刻を更新する)。
 

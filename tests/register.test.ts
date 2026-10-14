@@ -2,7 +2,7 @@
 // test answers what a session would: the files (in memory), the store, the
 // clock, the environment and `$.session.usage()`.
 
-import type { On, SessionContextBreakdown } from 'claude-code'
+import type { On, SessionContextBreakdown, ToolCallResult } from 'claude-code'
 import { describe, expect, type MockClock, mock, test } from 'claude-code/testing'
 
 const CONFIG_DIR = '/cfg'
@@ -18,6 +18,8 @@ const OFF_LIST = list([20, 'OFF {used_percent}%'], [60, 'OFF {used_percent}%'])
 
 type World = {
   clock: MockClock
+  sessionId: string
+  outcome: ToolCallResult
   files: Map<string, string>
   usage: { tokens?: number; window: number; percent?: number; autoCompact?: boolean; fails?: boolean }
 }
@@ -44,6 +46,8 @@ function breakdown(isAutoCompactEnabled: boolean): SessionContextBreakdown {
 function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Record<string, string> = {}): World {
   const w: World = {
     clock: mock.clock(on, { now: NOW }),
+    sessionId: 's1',
+    outcome: { result: 'ran', context: ['FROM BELOW'] },
     files: new Map(Object.entries(files)),
     usage: { tokens: 33_000, window: 50_000, percent: 66, autoCompact: true },
   }
@@ -72,45 +76,38 @@ function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Rec
       },
     }
   })
-  on('classic.PostToolUse', () => ({ additionalContext: ['FROM BELOW'] }))
-  on('classic.Stop', () => ({}))
+  on('session.id', () => ({ value: w.sessionId }))
+  on('tool.call', () => w.outcome)
   return w
 }
 
-const postToolUse = (agentId?: string) => ({
-  session_id: 's1',
-  tool_name: 'Bash',
-  tool_input: {},
-  tool_response: {},
-  tool_use_id: 't1',
-  ...(agentId === undefined ? {} : { agent_id: agentId }),
-})
+const BASH = { tool: 'Bash', command: 'true' } as const
 
-describe('measuring at PostToolUse', () => {
+describe('measuring after a tool call', () => {
   test('crossing a band speaks it after what the hooks beneath said', async ($, on) => {
     world(on)
-    const r = await $.classic.PostToolUse(postToolUse())
-    expect(r.additionalContext).toEqual(['FROM BELOW', '[context-notify] ON 66% (33000 / 50000 tokens)'])
+    const r = await $.tool.call(BASH)
+    expect(r.context).toEqual(['FROM BELOW', '[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
   test('the same band again is silent', async ($, on) => {
     world(on)
-    await $.classic.PostToolUse(postToolUse())
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    await $.tool.call(BASH)
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
   })
 
   test('the latch is kept per session in the store and read back', async ($, on) => {
     world(on, { 'session:s1': { band: 60, updatedAt: NOW } })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
   })
 
   test('a fall then a rise speaks again', async ($, on) => {
     const w = world(on)
-    await $.classic.PostToolUse(postToolUse())
+    await $.tool.call(BASH)
     w.usage = { ...w.usage, tokens: 5_000, percent: 10 }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
     w.usage = { ...w.usage, tokens: 33_000, percent: 66 }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual([
+    expect((await $.tool.call(BASH)).context).toEqual([
       'FROM BELOW',
       '[context-notify] ON 66% (33000 / 50000 tokens)',
     ])
@@ -118,8 +115,9 @@ describe('measuring at PostToolUse', () => {
 
   test('a subagent tool call neither speaks nor moves the latch', async ($, on) => {
     world(on)
-    expect((await $.classic.PostToolUse(postToolUse('agent-1'))).additionalContext).toEqual(['FROM BELOW'])
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual([
+    const inSubagent = { ...BASH, agentId: 'agent-1' }
+    expect((await $.tool.call(inSubagent)).context).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual([
       'FROM BELOW',
       '[context-notify] ON 66% (33000 / 50000 tokens)',
     ])
@@ -128,41 +126,32 @@ describe('measuring at PostToolUse', () => {
   test('nothing to measure yet leaves the latch where it is', async ($, on) => {
     const w = world(on)
     w.usage = { window: 50_000, autoCompact: true }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
     w.usage = { tokens: 33_000, window: 50_000, percent: 66, autoCompact: true }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.length).toBe(2)
+    expect((await $.tool.call(BASH)).context?.length).toBe(2)
   })
 
   test('a failed measurement passes the event through untouched', async ($, on) => {
     const w = world(on)
     w.usage = { ...w.usage, fails: true }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
+  })
+
+  test('a refused or failed call is passed through untouched', async ($, on) => {
+    const w = world(on)
+    w.outcome = { deny: 'no' }
+    expect(await $.tool.call(BASH)).toEqual({ deny: 'no' })
+    w.outcome = { result: 'boom', isError: true }
+    expect((await $.tool.call(BASH)).context).toBeUndefined()
+    // Neither measured, so the first ordinary call still crosses the band.
+    w.outcome = { result: 'ran' }
+    expect((await $.tool.call(BASH)).context).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
   })
 
   test('parallel tool calls speak a band once', async ($, on) => {
     world(on)
-    const rs = await Promise.all([$.classic.PostToolUse(postToolUse()), $.classic.PostToolUse(postToolUse())])
-    expect(rs.map((r) => r.additionalContext?.length)).toEqual([2, 1])
-  })
-})
-
-describe('measuring at Stop', () => {
-  test('crossing a band speaks it', async ($, on) => {
-    world(on)
-    const r = await $.classic.Stop({ session_id: 's1', stop_hook_active: false })
-    expect(r.additionalContext).toEqual(['[context-notify] ON 66% (33000 / 50000 tokens)'])
-  })
-
-  test('a continuation turn moves the latch without speaking, so nothing repeats', async ($, on) => {
-    world(on)
-    expect((await $.classic.Stop({ session_id: 's1', stop_hook_active: true })).additionalContext).toBeUndefined()
-    expect((await $.classic.Stop({ session_id: 's1', stop_hook_active: false })).additionalContext).toBeUndefined()
-  })
-
-  test('a latch moved at Stop is the one PostToolUse sees', async ($, on) => {
-    world(on)
-    await $.classic.Stop({ session_id: 's1', stop_hook_active: false })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    const rs = await Promise.all([$.tool.call(BASH), $.tool.call(BASH)])
+    expect(rs.map((r) => r.context?.length)).toEqual([2, 1])
   })
 })
 
@@ -170,23 +159,23 @@ describe('which list, and where it lives', () => {
   test('auto compact off reads the off list', async ($, on) => {
     const w = world(on)
     w.usage = { ...w.usage, autoCompact: false }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.[1]).toBe('[context-notify] OFF 66%')
+    expect((await $.tool.call(BASH)).context?.[1]).toBe('[context-notify] OFF 66%')
   })
 
   test('no breakdown reads the on list', async ($, on) => {
     const w = world(on)
     w.usage = { tokens: 33_000, window: 50_000, percent: 66 }
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.[1]).toContain('ON 66%')
+    expect((await $.tool.call(BASH)).context?.[1]).toContain('ON 66%')
   })
 
   test("the user's list in the data dir wins over the template", async ($, on) => {
     world(on, {}, { [`${DATA}/autocompact-on.json`]: list([50, 'MINE {used_percent}%']) })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.[1]).toBe('[context-notify] MINE 66%')
+    expect((await $.tool.call(BASH)).context?.[1]).toBe('[context-notify] MINE 66%')
   })
 
   test('a list with no usable line falls back to the template', async ($, on) => {
     world(on, {}, { [`${DATA}/autocompact-on.json`]: 'not json' })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.[1]).toContain('ON 66%')
+    expect((await $.tool.call(BASH)).context?.[1]).toContain('ON 66%')
   })
 })
 
@@ -203,17 +192,19 @@ describe('session.start', () => {
   test("sweeps latches older than 30 days and keeps the rest and other keys", async ($, on) => {
     on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
     on('session.start', () => ({ cwd: '/w' }))
-    world(on, {
+    const w = world(on, {
       'session:old': { band: 20, updatedAt: NOW - 31 * DAY },
       'session:fresh': { band: 60, updatedAt: NOW - DAY },
       'session:junk': 'x',
       other: 1,
     })
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-    // The fresh latch is still there: s=fresh stays silent in its band.
-    expect((await $.classic.PostToolUse({ ...postToolUse(), session_id: 'fresh' })).additionalContext).toEqual(['FROM BELOW'])
+    // The fresh latch is still there: that session stays silent in its band.
+    w.sessionId = 'fresh'
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
     // The old one is gone: the same usage speaks again.
-    expect((await $.classic.PostToolUse({ ...postToolUse(), session_id: 'old' })).additionalContext?.length).toBe(2)
+    w.sessionId = 'old'
+    expect((await $.tool.call(BASH)).context?.length).toBe(2)
   })
 })
 
@@ -222,24 +213,24 @@ describe('a session that stays in one band', () => {
     on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
     on('session.start', () => ({ cwd: '/w' }))
     const w = world(on)
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.length).toBe(2)
+    expect((await $.tool.call(BASH)).context?.length).toBe(2)
     // 20 days in the same band, measured now and then; then 20 more days, so
     // the band last changed 40 days ago but the session was last seen 20 ago.
     await w.clock.advance(20 * DAY)
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
     await w.clock.advance(20 * DAY)
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    expect((await $.tool.call(BASH)).context).toEqual(['FROM BELOW'])
   })
 
   test('an unmeasured latch past the TTL is still swept', async ($, on) => {
     on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
     on('session.start', () => ({ cwd: '/w' }))
     const w = world(on)
-    await $.classic.PostToolUse(postToolUse())
+    await $.tool.call(BASH)
     await w.clock.advance(31 * DAY)
     await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.length).toBe(2)
+    expect((await $.tool.call(BASH)).context?.length).toBe(2)
   })
 })
 
