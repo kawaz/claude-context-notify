@@ -1,6 +1,7 @@
 // Tell the running session how much of its context window it has used, once
-// per threshold crossed. Measures after each tool call of the main loop; the
-// decisions themselves are in notify.ts.
+// per threshold crossed. Measures each response of the main loop and hands the
+// notice to the model with its next request; the decisions themselves are in
+// notify.ts.
 
 import type { EngineInterface, Register } from 'claude-code'
 import {
@@ -97,7 +98,8 @@ async function readLatch($: $, key: string): Promise<LatchRecord | undefined> {
   if (typeof raw !== 'object' || raw === null || !('band' in raw) || !('updatedAt' in raw)) return undefined
   const { band, updatedAt } = raw
   if (typeof band !== 'number' || typeof updatedAt !== 'number') return undefined
-  return { band, updatedAt }
+  const pending = 'pending' in raw && typeof raw.pending === 'string' ? raw.pending : undefined
+  return pending === undefined ? { band, updatedAt } : { band, updatedAt, pending }
 }
 
 async function isAutoCompactEnabled($: $): Promise<boolean> {
@@ -107,17 +109,21 @@ async function isAutoCompactEnabled($: $): Promise<boolean> {
   return context.breakdown?.isAutoCompactEnabled ?? true
 }
 
-/** Measure, move the latch, and return what to say, if anything. */
-async function measure($: $): Promise<string | undefined> {
+/**
+ * Measure, move the latch, and keep the notice of a band just reached as
+ * pending until a request carries it. A newer band's notice replaces an
+ * undelivered one; a fall drops it with the band it was about.
+ */
+async function measure($: $): Promise<void> {
   const { context } = await $.session.usage({ breakdown: 'summary' })
   const { tokens, window, percent } = context
   // Before the first response of a live window (a fresh session, one just
   // compacted) there is nothing to measure; leave the latch where it is.
-  if (tokens === undefined || percent === undefined) return undefined
+  if (tokens === undefined || percent === undefined) return
 
   const name = listFor(context.breakdown?.isAutoCompactEnabled ?? true)
   const bands = resolveBands((await loadList($, name)).entries)
-  if (bands.size === 0) return undefined
+  if (bands.size === 0) return
 
   const key = latchKey(await $.session.id())
   const now = await $.clock.now()
@@ -127,15 +133,34 @@ async function measure($: $): Promise<string | undefined> {
     // Same band: the latch stands, but the sweep goes by `updatedAt`, so a
     // session that stays in one band must still be seen as alive.
     if (held !== undefined && needsTouch(held, now)) await $.store.set(key, { ...held, updatedAt: now })
-    return undefined
+    return
   }
-  await $.store.set(key, { band: step.band, updatedAt: now } satisfies LatchRecord)
-  return step.message
+  const next: LatchRecord =
+    step.message === undefined ? { band: step.band, updatedAt: now } : { band: step.band, updatedAt: now, pending: step.message }
+  await $.store.set(key, next)
 }
 
-// Parallel tool calls finish concurrently, each with its own tool.call.
-// Measurements go one at a time so two of them never both read the old latch
-// and both speak the same band.
+/** The notice waiting for the model, taken off the latch so no other request carries it again. */
+async function takePending($: $): Promise<string | undefined> {
+  const key = latchKey(await $.session.id())
+  const held = await readLatch($, key)
+  if (held?.pending === undefined) return undefined
+  await $.store.set(key, { band: held.band, updatedAt: held.updatedAt } satisfies LatchRecord)
+  return PREFIX + held.pending
+}
+
+/** Put back a notice whose request did not go out, unless a newer measurement replaced it. */
+async function returnPending($: $, notice: string): Promise<void> {
+  const key = latchKey(await $.session.id())
+  const held = await readLatch($, key)
+  if (held === undefined || held.pending !== undefined) return
+  await $.store.set(key, { ...held, pending: notice.slice(PREFIX.length) } satisfies LatchRecord)
+}
+
+// Measurements and deliveries happen concurrently (parallel tool calls finish
+// together, a response is measured while its tools already run).
+// They go one at a time so two of them never both read the same latch: no
+// band is reached twice, no notice is handed out twice.
 let queue: Promise<unknown> = Promise.resolve()
 function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
   const run = queue.then(task, task)
@@ -177,17 +202,42 @@ export const register: Register = (on) => {
     return started
   })
 
-  // A failed measurement must not cost the event anything: each hook below
-  // falls back to what the hooks beneath it answered (`next` replays it).
+  // A failed measurement or delivery must not cost the event anything: each
+  // hook below falls back to what the hooks beneath it answered (`next`
+  // replays it).
+  on('turn.step', async function* ($, e, next) {
+    const r = yield* next(e)
+    // A subagent's request: its usage is not the main context's.
+    if (e.agentId === undefined && r.usage !== null) await oneAtATime(() => measure($))
+    return r
+  }).catch(async function* ($, e, next) {
+    return yield* next(e)
+  })
+
+  // Design rationale: the notice is delivered through two doors that share
+  // takePending. A request to the model either starts a turn or follows tool
+  // results; the engine has no single door that adds context to every request.
+  // prompt.attachment comes closest, but no attachment is raised on every
+  // request, and what a hook writes into one is not kept in the transcript.
+  on('prompt.submit', async ($, e, next) => {
+    // A slash command may not reach the model; its notice waits for a prompt that does.
+    if (e.command !== undefined) return next(e)
+    const notice = await oneAtATime(() => takePending($))
+    if (notice === undefined) return next(e)
+    const r = await next({ ...e, context: [...(e.context ?? []), notice] })
+    if (r.drop !== undefined) await oneAtATime(() => returnPending($, notice))
+    return r
+  }).catch(($, e, next) => next(e))
+
   // The notice rides on the tool's result as context: the model reads it as
-  // one reminder after the result. A subagent's call is left alone (the usage
-  // is the main loop's, and the notice would reach the subagent), as is a
-  // refused or failed call, whose result takes no context.
+  // one reminder after the result. A subagent's call is left alone (the
+  // notice would reach the subagent), as is a refused or failed call, whose
+  // result takes no context.
   on('tool.call', async ($, e, next) => {
     const r = await next(e)
     if (e.agentId !== undefined || r.deny !== undefined || r.isError === true) return r
-    const notice = await oneAtATime(() => measure($))
-    return notice === undefined ? r : { ...r, context: [...(r.context ?? []), PREFIX + notice] }
+    const notice = await oneAtATime(() => takePending($))
+    return notice === undefined ? r : { ...r, context: [...(r.context ?? []), notice] }
   }).catch(($, e, next) => next(e))
 
   // /context-notify:config reads the lists' report at the moment it is invoked.

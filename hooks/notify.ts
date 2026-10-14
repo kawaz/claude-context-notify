@@ -26,8 +26,12 @@ export type Bands = ReadonlyMap<number, string>
 /** The context window's fill, as `$.session.usage()` reports it once measured. */
 export type Usage = { tokens: number; window: number; percent: number }
 
-/** What a session keeps between measurements, under `latchKey(sessionId)` in `$.store`. */
-export type LatchRecord = { band: number; updatedAt: number }
+/**
+ * What a session keeps between measurements, under `latchKey(sessionId)` in
+ * `$.store`: the band it last reached, when it was last measured, and the
+ * notice for that band while the model has not been handed it yet.
+ */
+export type LatchRecord = { band: number; updatedAt: number; pending?: string }
 
 /** A latch no measurement has touched this long belongs to a session nobody will resume. */
 export const LATCH_TTL_MS = 30 * 24 * 60 * 60 * 1000

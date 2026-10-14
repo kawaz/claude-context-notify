@@ -10,7 +10,7 @@ Built on Claude Code's Mods (a TypeScript hooks module) alone. No proxy, no stat
 
 A long-running session has no idea how much room it has left. It keeps starting large investigations at 94% and gets cut off mid-handoff. Claude Code has the numbers, but nothing puts them in front of the model.
 
-This plugin measures usage after every tool call of the main conversation and, when a threshold is crossed, injects a line the model actually reads:
+This plugin measures usage after every response of the main conversation and, when a threshold is crossed, hands the model a line it actually reads with its next request (the next tool result, or the next prompt):
 
 ```
 <system-reminder>
@@ -94,17 +94,18 @@ When a file cannot be read, or has no usable entry, the bundled template is used
 
 | Hook | What it does |
 |---|---|
-| `tool.call` (after the tool ran) | Measures usage, moves the latch, and, when the latch just moved up into a band, adds the notice to the tool's result. |
+| `turn.step` (after each response) | Measures usage, moves the latch, and, when the latch just moved up into a band, keeps that band's notice as pending. |
+| `prompt.submit`, `tool.call` | Hands the pending notice to the model with the request that starts the turn or follows the tool's result, whichever comes first, and clears it. |
 | `session.start` | Creates the two files from the templates when absent, sweeps old latches, and registers the check tool. |
 | When `/context-notify:config` expands | Embeds both paths, the list in use, the check's verdict and that list's contents in the command's prompt. |
 
 Usage and window are the figures Claude Code shows in its status line (`$.session.usage()`'s `context.tokens` / `window` / `percent`): the input side of the last response (uncached + cache written + cache read) over the model's window. The window is Claude Code's own, so a `[1m]` model is measured correctly, after `/clear` too.
 
-A tool call inside a subagent is not measured: the usage is the main context's, and a notice there would reach the subagent. Nor is a refused or failed call.
+A subagent's responses are not measured and its tool calls carry no notice: the usage is the main context's, and a notice there would reach the subagent. A refused or failed tool call carries none either, nor does a slash command.
 
-The notice rides on the tool's result, so it never wakes an extra turn. A crossing during a response that calls no tool is announced with the next tool call.
+The notice rides on a request that happens anyway, so it never wakes an extra turn, and it is handed over once. A crossing in a response that calls no tool is announced at the start of the next turn.
 
-The latch is a single band per session in the plugin's own store. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. A session's latch is removed after 30 days without a measurement (a session that stays in one band still records that it was measured, once a day).
+The latch is a single band per session in the plugin's own store, plus the notice not handed over yet; a fall drops that notice along with the band. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. A session's latch is removed after 30 days without a measurement (a session that stays in one band still records that it was measured, once a day).
 
 Design rationale: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md).
 

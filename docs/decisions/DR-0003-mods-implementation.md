@@ -14,20 +14,22 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 | 確かめたこと | 結果 |
 |---|---|
-| 使用量の取り方 | `$.session.usage()` の `context.tokens / window / percent` は、tool の実行後 (`tool.call` の `next(e)` の後) の時点で直前の応答の値になっている。transcript の書き込みを待つ遅れが無い |
+| 使用量の取り方 | `turn.step` (model への 1 リクエスト) の `next(e)` が返った時点で、`$.session.usage()` の `context.tokens / window / percent` はその応答の値になっている。transcript の書き込みを待つ遅れが無い。subagent のリクエストには `e.agentId` が付く |
 | window | `context.window` は model 名に `[1m]` が無い経路 (`/clear` 後、`-p` 起動) でも正しい window を返す |
 | auto compact の有効 / 無効 | `$.session.usage({ breakdown: "summary" })` の `context.breakdown.isAutoCompactEnabled` が Claude Code 自身の判定を返す。数 ms で済む |
 | `$.state` | `/clear` でも resume でも消える |
 | `$.store` | session と reload を跨いで残る。plugin 専用の KV、全体で JSON 4 MiB まで |
 | data dir | `$.plugin.root` が `<plugins>/cache/<marketplace>/<plugin>/<version>` のとき、`<plugins>/data/<plugin>-<marketplace>` が command hook に渡る `CLAUDE_PLUGIN_DATA` と一致する。`--plugin-dir` で読んだ時は root がこの形にならない |
 | tool の結果への注入 | `tool.call` で `next(e)` の結果の `context` に足した文字列は、command hook の `additionalContext` と同じ reminder (transcript では `hook_additional_context`、`hookName: tool.call`) として model に届く |
+| ターンの始まりへの注入 | `prompt.submit` で `next({ ...e, context })` として足した文字列は、prompt の直後の reminder (`prompt.submit hook additional context: …`) として model に届き、transcript には `hook_additional_context` として残る。ユーザの発言にはならない。`prompt.submit` はユーザ入力に限らずターンを始める入力 (task-notification、別セッションからのメッセージ等) で発火する |
+| 毎リクエストの attachment | `prompt.attachment` は attachment が作られる時だけ発火する。2 回目以降のリクエストで付いたのは `total_tokens_reminder` だけで、これは機能の設定次第で付かない。hook が書き換えた text は model に届くが transcript には残らない |
 | subagent 内の tool 呼び出し | subagent の tool 呼び出しでも同じ module の `tool.call` が走り、`e.agentId` が付く (Bash も `SubagentHandback` も)。そこで返した通知は subagent に届く (`classic.PostToolUse` の `additionalContext` で確認した) |
 | 並列の tool 呼び出し | 1 つの応答で並列に呼んだ tool の `tool.call` は並行に終わる (3 本が 12 ms 以内に settle) |
 | command への注入 | plugin の `.md` (prompt 型) command では、`command.run` で `next(e)` の後に足した `context` は捨てられる (debug log: `a hook's own answer after next() dropped`)。`skill.prompt` で返した `text` は model が読む prompt そのものになる |
 | model が呼べる tool | `$.tool.register` で `mcp__<plugin>__<name>` を足し、`tool.call` hook が `{ result }` を返せば、command の `allowed-tools` に書いて `-p` でも呼べる |
 | npm パッケージ | hooks module が import できるのは自分のファイル (相対パス) と `claude-code` だけ。パッケージ名の import は `claude plugin validate` が拒む |
-| テスト | `claude plugin test` で `tests/*.test.ts` が engine 上で走る。`../hooks/*.ts` の純粋関数を直接呼べ、hook も `$.tool.call(...)` 等で起こして、`$` の下 (`fs.*` / `session.usage` / `session.id` / `tool.call` / `mock.store` / `mock.clock` / `mock.env`) をテストが答えられる |
-| 組織管理下 | `claude plugin validate` の注記: managed settings のある機械では、利用者が自分で入れた plugin の `classic.*` / `skill.prompt` hook は走らない (組織が managed settings に載せた plugin だけが走らせる)。`tool.call` / `session.start` はこの注記の対象に入らない |
+| テスト | `claude plugin test` で `tests/*.test.ts` が engine 上で走る。`../hooks/*.ts` の純粋関数を直接呼べ、hook も `$.turn.step(...)` / `$.tool.call(...)` / `$.prompt.submit(...)` 等で起こして、`$` の下 (`fs.*` / `session.usage` / `session.id` / `turn.step` / `tool.call` / `prompt.submit` / `mock.store` / `mock.clock` / `mock.env`) をテストが答えられる |
+| 組織管理下 | `claude plugin validate` の注記: managed settings のある機械では、利用者が自分で入れた plugin の `classic.*` / `skill.prompt` hook は走らない (組織が managed settings に載せた plugin だけが走らせる)。`turn.step` / `tool.call` / `prompt.submit` / `session.start` はこの注記の対象に入らない |
 
 ## Decision
 
@@ -37,18 +39,25 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 **statusline は使わない。** `context_window.used_percentage` を完成品で持つが、plugin の `settings.json` で配れず、利用者自身の statusline を奪う。**外部 proxy も使わない。** その proxy を持たない環境では何も動かない。
 
-### 2. main loop の tool 呼び出しの後で測り、跨いでいれば tool の結果に添える
+### 2. main loop の応答ごとに測り、通知は次のリクエストに 1 回だけ添える
 
-`tool.call` で `next(e)` (tool の実行) の後に `$.session.usage()` を呼び、帯を上に跨いだなら結果の `context` の末尾に `[context-notify] <文面>` を足して返す。model はそれを tool の結果の直後の reminder として読む。
+計測と配達を分ける。
+
+計測: `turn.step` で `next(e)` (model の応答) が返った後に `$.session.usage()` を呼び、帯を上に跨いだらその帯の文面を「未配達の通知」として latch に持つ (下記 3)。
 
 - 閾値の判定は `context.percent` (engine が四捨五入した整数) で行う。`tokens` か `percent` が無い時 (live window の最初の応答の前、compact 直後) は何もしない。latch も動かさない
 - window は `context.window` をそのまま使う
-- `e.agentId` がある (subagent の loop の呼び出し) 時は、計測も latch の更新もせず `next(e)` の結果をそのまま返す。測る値は main の context で、通知は subagent に届いてしまうため
-- 拒否された呼び出し (`deny`) と失敗した呼び出し (`isError`) の結果はそのまま返す
-- 計測は module 内で 1 本ずつ直列に走らせる。並列の tool 呼び出しが同じ古い latch を読んで同じ帯を 2 回喋らないため
-- hook は registration の `.catch(($, e, next) => next(e))` を持つ。計測が失敗しても結果には何も足さず、下の hook の答えをそのまま返す
+- `e.agentId` がある (subagent の loop の) 応答は測らない。測る値は main の context のもので、通知を届けるのも main の loop だけ
 
-**応答の終わりでは測らない。** 通知は tool の結果に添えて届くので、そのために余分なターンを起こさない。tool を呼ばない応答の途中で帯を跨いだ分は、次の tool 呼び出しで届く。
+配達: model へのリクエストは、ターンの始まりか tool の結果の後の 2 種類しかない。それぞれの口で未配達の通知を取り出し (latch から消し)、`[context-notify] <文面>` として 1 つ足す。
+
+- `prompt.submit`: `next({ ...e, context: [...] })` で prompt の直後に足す。slash command の入力では渡さない (model に届かない command がある)。prompt が drop された時は通知を latch に戻す
+- `tool.call`: `next(e)` の結果の `context` の末尾に足す。subagent の呼び出し (`e.agentId`)、拒否された呼び出し (`deny`)、失敗した呼び出し (`isError`) では渡さない
+- 2 つの口は同じ取り出し処理を呼ぶだけで、先に来た方が渡す。渡した通知は消えるので二重には届かない
+- 計測と取り出しは module 内で 1 本ずつ直列に走らせる。並列の tool 呼び出しが同じ通知を 2 回渡したり、同じ帯を 2 回跨いだりしないため
+- hook は registration の `.catch` を持つ。計測や配達が失敗しても、応答・prompt・tool の結果には何も足さず、下の hook の答えをそのまま返す
+
+**応答の終わりに継続ターンを起こさない。** 通知は次に起きるリクエストに添えて届く。tool を呼ばない応答で帯を跨いだ分は、次のターンの始まりで届く。
 
 **`UserPromptSubmit` は使わない。** 外部注入や別セッションからのメッセージが起点のターンでは発火しない経路があり、配達をこれに依存すると通知が落ちる。
 
@@ -56,7 +65,7 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 ### 3. latch は `$.store` に session 別に 1 個持ち、上がった時だけ喋る
 
-キー `session:<session id>`、値 `{ band, updatedAt }` (`updatedAt` は `$.clock.now()` の ms)。
+キー `session:<session id>`、値 `{ band, updatedAt, pending? }` (`updatedAt` は `$.clock.now()` の ms、`pending` は未配達の通知の文面)。
 
 - latch が無ければ -1 から始める。latch が無い = このセッションでまだ測っていない、なので `used_percent: 0` の帯は最初の計測で 1 回だけ跨ぐ
 - 帯 = 到達した閾値のうち最も高いもの (どの閾値にも届かなければ 0)。帯が latch と同じなら何もしない
@@ -110,19 +119,21 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 ### 8. テストは `claude plugin test`
 
-判定の純粋関数 (帯の解決、帯の判定、latch の遷移、文面の展開、通知リストの検証、data dir) は `tests/notify.test.ts` で直接呼ぶ。hook の振る舞い (subagent、拒否・失敗した呼び出し、未計測、並列、リストの選択、テンプレからの作成、latch の掃除、config の埋め込みと check) は `tests/register.test.ts` で engine に hook を起こさせ、`$` の下をテストが答える。
+判定の純粋関数 (帯の解決、帯の判定、latch の遷移、文面の展開、通知リストの検証、data dir) は `tests/notify.test.ts` で直接呼ぶ。hook の振る舞い (応答で測って次のリクエストで 1 回だけ渡す、subagent、拒否・失敗した呼び出し、slash command と drop、未計測、並列、リストの選択、テンプレからの作成、latch の掃除、config の埋め込みと check) は `tests/register.test.ts` で engine に hook を起こさせ、`$` の下をテストが答える。
 
 ## Alternatives Considered
 
 - **command hook (外部スクリプト) のまま**: 使用量を transcript から読むと、書き込みが非同期なので応答の終わりの時点でそのターンの行がまだ無いことがある。window を model 名の `[1m]` から推すと `/clear` や `-p` の起動で外れ、auto compact の有効 / 無効を settings ファイルから推すと Claude Code 自身の判定とずれうる。Mods なら 3 つとも engine の値をそのまま読める
 - **statusline から `used_percentage` を読む**: plugin で配れない (上記 1)
 - **`classic.PostToolUse` / `classic.Stop` で測る**: managed settings のある機械では、利用者が入れた plugin の `classic.*` hook が走らない (Context の validate の注記)。`Stop` から喋ると継続ターンが 1 本起きる
+- **tool の呼び出しで測り、`tool.call` だけで配る**: tool を呼ばない応答で跨いだ分が、次に tool を呼ぶまで届かない
+- **`prompt.attachment` に相乗りして口を 1 本にする**: 毎リクエスト付く attachment が無く、書き換えた text は transcript に残らない (Context の実測)。validate も組織管理下で走らない hook に挙げる
 - **帯の高さで即時 / 相乗りを出し分ける**: 相乗りが要らないなら出し分けも要らない
 - **`UserPromptSubmit` を配達に使う**: 外部注入や別セッションからのメッセージが起点のターンでは発火しない経路がある
 - **`PreCompact` で compact を知らせる**: latch の巻き戻しだけで足りる
 - **latch を `$.state` に置く**: `/clear` と resume で消え、通知済みの閾値を再通知する
 - **`command.run` で config の素材を `context` に足す**: prompt 型 command では捨てられる (Context の実測)
-- **config の素材を tool で渡す (手順の 1 で model が check を呼ぶ。単独でも、埋め込みが無い時の退避としても)**: invoke のたびに往復が 1 回増え、退避として持つと手順書が分岐する。組織管理下では計測の hook 自体が走らないので、そこで config だけ動いても plugin としては働かない
+- **config の素材を tool で渡す (手順の 1 で model が check を呼ぶ。単独でも、埋め込みが無い時の退避としても)**: invoke のたびに往復が 1 回増え、退避として持つと手順書が分岐する
 - **スキーマライブラリを vendoring する**: 上記 7
 
 ## Consequences
