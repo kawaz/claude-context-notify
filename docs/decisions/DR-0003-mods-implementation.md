@@ -83,7 +83,7 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 
 - `version` は形式そのもののバージョン (現行 1)。一致しなければ check が知らせるが、**自動移行も上書きもしない**。利用者が書いた文面を plugin が書き換えないという性質のほうが、移行の手間より重い。hook は `notifications` を読める範囲で使い続ける
 - 同じ `used_percent` を複数書いてよい。その文面はファイル内の順序で改行連結され、帯を跨いだ 1 回の通知としてまとめて出る
-- 文面のプレースホルダは `{used_tokens}` / `{used_percent}` / `{available_tokens}` / `{available_percent}` / `{window_tokens}` の 5 つ。`available_percent` は `100 - used_percent`。書式指定 (`{used_percent:03d}` 等) と変換指定 (`{used_tokens!s}` 等) は使えず、check がそれぞれその言葉で報告する。波括弧そのものは `{{` / `}}` と書き、対になっていない `{` / `}` は check が報告する。**綴りを間違えたプレースホルダや書式指定・変換指定付きのものは hook では例外にせず、そのまま文字として残す** (設定ミスでセッションの hook が毎回落ちるほうが害が大きい)
+- 文面のプレースホルダは `{used_tokens}` / `{used_percent}` / `{available_tokens}` / `{available_percent}` / `{window_tokens}` の 5 つ。`available_percent` は `100 - used_percent`。プレースホルダは `{identifier}` の形だけで、それ以外は文字どおりに残る。**綴りを間違えたプレースホルダは hook では例外にせず、そのまま文字として残す** (設定ミスでセッションの hook が毎回落ちるほうが害が大きい)
 - どちらのファイルが読まれるかは判定結果だけで決まり、利用者が指定する余地は持たない。片方に固定したい利用者は 2 ファイルを同じ内容にすればよい
 - 同梱テンプレの帯は on が 20/40/60/80/90、off が 20/40/60/80/90/95/97。off 側は auto compact が走らないので、高い帯で引き継ぎの準備と、ユーザに `/compact` を頼むことを促す
 

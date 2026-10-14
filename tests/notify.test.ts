@@ -110,8 +110,10 @@ describe('render', () => {
     expect(render('OLD {pct}% {used} {window}', usage(33_000))).toBe('OLD {pct}% {used} {window}')
   })
 
-  test('doubled braces are literal braces', () => {
-    expect(render('{{used_percent}} {used_percent}', usage(33_000))).toBe('{used_percent} 66')
+  test('only {identifier} is a placeholder; any other brace is text', () => {
+    expect(render('{{used_percent}} {used_tokens:,} {used_tokens!s} {0} { used_percent } { {used_percent}', usage(33_000))).toBe(
+      '{66} {used_tokens:,} {used_tokens!s} {0} { used_percent } { 66',
+    )
   })
 
   test('grouped thousands, negative included', () => {
@@ -120,8 +122,8 @@ describe('render', () => {
     expect(grouped(-1_500)).toBe('-1,500')
   })
 
-  test('placeholderNames skips doubled braces', () => {
-    expect(placeholderNames('{a} {{b}} {c}')).toEqual(['a', 'c'])
+  test('placeholderNames takes only {identifier}', () => {
+    expect(placeholderNames('{a} {{b}} {c:,} {d!s} {0} {_e1}')).toEqual(['a', 'b', '_e1'])
   })
 })
 
@@ -193,49 +195,20 @@ describe('readList', () => {
     ])
   })
 
+  test('only an unknown {identifier} is a placeholder problem; other braces are text', () => {
+    const r = readList(
+      JSON.stringify({ version: 1, notifications: [{ used_percent: 50, message: '{used_tokens:,} {used_tokens!s} {0} { {{x}} }' }] }),
+      'autocompact-on',
+    )
+    expect(r.problems).toEqual([
+      'notifications[0].message: 未知のプレースホルダ {x} (使えるのは {used_tokens}, {used_percent}, {available_tokens}, {available_percent}, {window_tokens})',
+    ])
+  })
+
   test('a threshold spelt as a string is flagged but still used', () => {
     const r = readList(list({ version: 1, notifications: [{ used_percent: '50', message: 'x' }] }), 'autocompact-on')
     expect(r.problems).toEqual(['notifications[0].used_percent は 0〜100 の整数にしてください (現在: "50")'])
     expect(r.entries).toEqual([{ usedPercent: 50, message: 'x' }])
-  })
-})
-
-describe('readList: placeholder spelling', () => {
-  const problemsOf = (message: string): string[] =>
-    readList(JSON.stringify({ version: 1, notifications: [{ used_percent: 50, message }] }), 'autocompact-on').problems
-
-  test('a format spec is reported as one, naming the bare placeholder', () => {
-    expect(problemsOf('{used_tokens:,} tokens')).toEqual([
-      'notifications[0].message: {used_tokens:,} の書式指定 (:,) は使えません。{used_tokens} と名前だけ書いてください',
-    ])
-    expect(problemsOf('{used_percent:03d}')).toEqual([
-      'notifications[0].message: {used_percent:03d} の書式指定 (:03d) は使えません。{used_percent} と名前だけ書いてください',
-    ])
-  })
-
-  test('a conversion is reported as one, alone or with a format spec', () => {
-    expect(problemsOf('{used_tokens!s}')).toEqual([
-      'notifications[0].message: {used_tokens!s} の変換指定 (!s) は使えません。{used_tokens} と名前だけ書いてください',
-    ])
-    expect(problemsOf('{used_tokens!s:>10}')).toEqual([
-      'notifications[0].message: {used_tokens!s:>10} の変換指定と書式指定 (!s:>10) は使えません。{used_tokens} と名前だけ書いてください',
-    ])
-  })
-
-  test('a format spec on an unknown name is an unknown placeholder', () => {
-    expect(problemsOf('{pct:>3}')[0]).toContain('未知のプレースホルダ {pct:>3}')
-  })
-
-  test('an unpaired brace is reported; doubled braces are fine', () => {
-    const unpaired = 'notifications[0].message: 対になっていない波括弧があります。波括弧そのものは {{ / }} と書いてください'
-    expect(problemsOf('ctx {used_percent')).toEqual([unpaired])
-    expect(problemsOf('ctx } {used_percent}')).toEqual([unpaired])
-    expect(problemsOf('{used_percent}}')).toEqual([unpaired])
-    expect(problemsOf('{{literal}} {used_percent}')).toEqual([])
-  })
-
-  test('render leaves a format spec, a conversion and an unpaired brace as they are', () => {
-    expect(render('{used_tokens:,} {used_tokens!s} / {used_percent}% {', usage(33_000))).toBe('{used_tokens:,} {used_tokens!s} / 66% {')
   })
 })
 

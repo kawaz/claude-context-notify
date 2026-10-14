@@ -106,21 +106,13 @@ export function readList(text: string, name: ListName): ListReading {
     if (typeof message !== 'string' || message.trim() === '') {
       problems.push(`${where}.message は空でない文字列にしてください`)
     } else {
-      for (const field of placeholderNames(message)) {
-        const name = /^[^:!]*/.exec(field)?.[0] ?? field
-        if (name !== field && isPlaceholder(name)) {
+      for (const name of placeholderNames(message)) {
+        if (!isPlaceholder(name)) {
           problems.push(
-            `${where}.message: {${field}} の${suffixKind(field.slice(name.length))} (${field.slice(name.length)}) は使えません。{${name}} と名前だけ書いてください`,
-          )
-        } else if (!isPlaceholder(field)) {
-          problems.push(
-            `${where}.message: 未知のプレースホルダ {${field}} ` +
+            `${where}.message: 未知のプレースホルダ {${name}} ` +
               `(使えるのは ${PLACEHOLDERS.map((p) => `{${p}}`).join(', ')})`,
           )
         }
-      }
-      if (/[{}]/.test(message.replace(FIELD, ''))) {
-        problems.push(`${where}.message: 対になっていない波括弧があります。波括弧そのものは {{ / }} と書いてください`)
       }
     }
 
@@ -132,12 +124,6 @@ export function readList(text: string, name: ListName): ListReading {
     }
   }
   return { entries, problems }
-}
-
-/** What follows a placeholder's name, in check's words: `!s` is a conversion, `:,` a format spec. */
-function suffixKind(suffix: string): string {
-  if (!suffix.startsWith('!')) return '書式指定'
-  return suffix.includes(':') ? '変換指定と書式指定' : '変換指定'
 }
 
 function isPlaceholder(name: string): boolean {
@@ -189,16 +175,12 @@ export function advance(prev: number | undefined, usage: Usage, bands: Bands, ma
   return { band, message: render(template, usage) }
 }
 
-const FIELD = /\{\{|\}\}|\{([^{}]*)\}/g
+// A placeholder is `{identifier}` and nothing else; every other brace is text.
+const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g
 
-/** The field names in a message, as `{name}` spells them (`{{` and `}}` are literal braces). */
+/** The names of the `{identifier}` placeholders in a message, known or not. */
 export function placeholderNames(template: string): string[] {
-  const names: string[] = []
-  for (const m of template.matchAll(FIELD)) {
-    const name = m[1]
-    if (name !== undefined && name !== '') names.push(name)
-  }
-  return names
+  return [...template.matchAll(PLACEHOLDER)].flatMap((m) => (m[1] === undefined ? [] : [m[1]]))
 }
 
 /**
@@ -216,11 +198,7 @@ export function render(template: string, usage: Usage): string {
     available_percent: String(100 - usage.percent),
     window_tokens: grouped(usage.window),
   }
-  return template.replace(FIELD, (whole, name: string | undefined) => {
-    if (whole === '{{') return '{'
-    if (whole === '}}') return '}'
-    return (name !== undefined && Object.hasOwn(values, name) ? values[name] : undefined) ?? whole
-  })
+  return template.replace(PLACEHOLDER, (whole, name: string) => (Object.hasOwn(values, name) ? values[name] : undefined) ?? whole)
 }
 
 /** `1234567` as `1,234,567`. */
