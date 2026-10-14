@@ -3,7 +3,7 @@
 // clock, the environment and `$.session.usage()`.
 
 import type { On, SessionContextBreakdown } from 'claude-code'
-import { describe, expect, mock, test } from 'claude-code/testing'
+import { describe, expect, type MockClock, mock, test } from 'claude-code/testing'
 
 const CONFIG_DIR = '/cfg'
 const DATA = `${CONFIG_DIR}/plugins/data/context-notify-inline`
@@ -17,6 +17,7 @@ const ON_LIST = list([20, 'ON {used_percent}%'], [60, 'ON {used_percent}% ({used
 const OFF_LIST = list([20, 'OFF {used_percent}%'], [60, 'OFF {used_percent}%'])
 
 type World = {
+  clock: MockClock
   files: Map<string, string>
   usage: { tokens?: number; window: number; percent?: number; autoCompact?: boolean; fails?: boolean }
 }
@@ -42,12 +43,12 @@ function breakdown(isAutoCompactEnabled: boolean): SessionContextBreakdown {
 /** What lies beneath the plugin. Templates are served from the plugin's own folder, as fixtures. */
 function world(on: On, store: Readonly<Record<string, unknown>> = {}, files: Record<string, string> = {}): World {
   const w: World = {
+    clock: mock.clock(on, { now: NOW }),
     files: new Map(Object.entries(files)),
     usage: { tokens: 33_000, window: 50_000, percent: 66, autoCompact: true },
   }
   mock.store(on, store)
   mock.env(on, { CLAUDE_CONFIG_DIR: CONFIG_DIR, HOME: '/home/u' })
-  mock.clock(on, { now: NOW })
   const template = (path: string): string | undefined =>
     path.endsWith('/templates/autocompact-on.json') ? ON_LIST : path.endsWith('/templates/autocompact-off.json') ? OFF_LIST : undefined
   on('fs.read', ($, e) => {
@@ -213,6 +214,32 @@ describe('session.start', () => {
     expect((await $.classic.PostToolUse({ ...postToolUse(), session_id: 'fresh' })).additionalContext).toEqual(['FROM BELOW'])
     // The old one is gone: the same usage speaks again.
     expect((await $.classic.PostToolUse({ ...postToolUse(), session_id: 'old' })).additionalContext?.length).toBe(2)
+  })
+})
+
+describe('a session that stays in one band', () => {
+  test('keeps its latch through the sweep as long as it is measured', async ($, on) => {
+    on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
+    on('session.start', () => ({ cwd: '/w' }))
+    const w = world(on)
+    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.length).toBe(2)
+    // 20 days in the same band, measured now and then; then 20 more days, so
+    // the band last changed 40 days ago but the session was last seen 20 ago.
+    await w.clock.advance(20 * DAY)
+    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+    await w.clock.advance(20 * DAY)
+    await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+    expect((await $.classic.PostToolUse(postToolUse())).additionalContext).toEqual(['FROM BELOW'])
+  })
+
+  test('an unmeasured latch past the TTL is still swept', async ($, on) => {
+    on('tool.register', () => ({ value: { tool: 'mcp__context-notify__check' } }))
+    on('session.start', () => ({ cwd: '/w' }))
+    const w = world(on)
+    await $.classic.PostToolUse(postToolUse())
+    await w.clock.advance(31 * DAY)
+    await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+    expect((await $.classic.PostToolUse(postToolUse())).additionalContext?.length).toBe(2)
   })
 })
 

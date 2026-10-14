@@ -29,8 +29,14 @@ export type Usage = { tokens: number; window: number; percent: number }
 /** What a session keeps between measurements, under `latchKey(sessionId)` in `$.store`. */
 export type LatchRecord = { band: number; updatedAt: number }
 
-/** A latch untouched this long belongs to a session nobody will resume. */
+/** A latch no measurement has touched this long belongs to a session nobody will resume. */
 export const LATCH_TTL_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * How stale `updatedAt` may get before a measurement that leaves the band
+ * alone still rewrites it. It keeps a live session's latch clear of the sweep
+ * without writing the store on every tool call.
+ */
+export const LATCH_TOUCH_MS = 24 * 60 * 60 * 1000
 export const LATCH_PREFIX = 'session:'
 export const latchKey = (sessionId: string): string => `${LATCH_PREFIX}${sessionId}`
 
@@ -240,6 +246,11 @@ export function dataDir(root: string, plugin: string, env: PluginsHome): string 
 /** Whether a latch was last moved long enough ago to be swept. */
 export function isStale(record: LatchRecord, now: number): boolean {
   return now - record.updatedAt > LATCH_TTL_MS
+}
+
+/** Whether a measurement that leaves the band alone should still record that the session is alive. */
+export function needsTouch(record: LatchRecord, now: number): boolean {
+  return now - record.updatedAt >= LATCH_TOUCH_MS
 }
 
 /** `check`'s verdict over both lists: one line when they are fine. */

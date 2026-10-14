@@ -9,7 +9,9 @@ import {
   dataDir,
   grouped,
   isStale,
+  LATCH_TOUCH_MS,
   LATCH_TTL_MS,
+  needsTouch,
   listFor,
   placeholderNames,
   readList,
@@ -235,6 +237,11 @@ describe('where the lists live', () => {
     expect(dataDir(root, 'context-notify', { configDir: '/cfg', home: '/h' })).toBe('/cfg/plugins/data/context-notify-inline')
     expect(dataDir(root, 'context-notify', { home: '/h' })).toBe('/h/.claude/plugins/data/context-notify-inline')
     expect(dataDir(root, 'context-notify', {})).toBeUndefined()
+  })
+
+  test('a measurement in the same band touches the latch once a day at most', () => {
+    expect(needsTouch({ band: 20, updatedAt: 0 }, LATCH_TOUCH_MS - 1)).toBe(false)
+    expect(needsTouch({ band: 20, updatedAt: 0 }, LATCH_TOUCH_MS)).toBe(true)
   })
 
   test('a latch goes stale after the TTL', () => {

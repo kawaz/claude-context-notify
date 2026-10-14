@@ -15,6 +15,7 @@ import {
   isStale,
   latchKey,
   listFor,
+  needsTouch,
   readList,
   report,
   resolveBands,
@@ -124,9 +125,16 @@ async function measure($: $, sessionId: string, maySpeak: boolean): Promise<stri
   if (bands.size === 0) return undefined
 
   const key = latchKey(sessionId)
-  const step = advance((await readLatch($, key))?.band, { tokens, window, percent }, bands, maySpeak)
-  if (step === undefined) return undefined
-  await $.store.set(key, { band: step.band, updatedAt: await $.clock.now() } satisfies LatchRecord)
+  const now = await $.clock.now()
+  const held = await readLatch($, key)
+  const step = advance(held?.band, { tokens, window, percent }, bands, maySpeak)
+  if (step === undefined) {
+    // Same band: the latch stands, but the sweep goes by `updatedAt`, so a
+    // session that stays in one band must still be seen as alive.
+    if (held !== undefined && needsTouch(held, now)) await $.store.set(key, { ...held, updatedAt: now })
+    return undefined
+  }
+  await $.store.set(key, { band: step.band, updatedAt: now } satisfies LatchRecord)
   return step.message
 }
 
@@ -140,7 +148,7 @@ function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
   return run
 }
 
-/** Remove the latches of sessions nobody has touched for LATCH_TTL_MS. */
+/** Remove the latches of sessions no measurement has touched for LATCH_TTL_MS. */
 async function sweepLatches($: $): Promise<void> {
   const now = await $.clock.now()
   for (const key of await $.store.keys()) {

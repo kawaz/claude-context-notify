@@ -104,7 +104,7 @@ A tool call inside a subagent is not measured: the usage is the main context's, 
 
 Speaking from `Stop` wakes one continuation turn, but the prefix it reads is already in the prompt cache, so the crossing costs a cache read plus a few dozen written tokens. That is cheap enough that there is no reason to hold a message back for a turn that was going to happen anyway. The continuation turn's own `Stop` measures without speaking.
 
-The latch is a single band per session in the plugin's own store. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. Latches untouched for 30 days are removed.
+The latch is a single band per session in the plugin's own store. It speaks when usage rises past a band and silently rewinds when usage falls, so a `/compact` or `/clear` re-arms the thresholds without emitting a pointless "you went down" notice. A resumed session keeps its latch, so it does not repeat a notice it already gave. A session's latch is removed after 30 days without a measurement (a session that stays in one band still records that it was measured, once a day).
 
 Design rationale: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md).
 

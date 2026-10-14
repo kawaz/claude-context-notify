@@ -104,7 +104,7 @@ subagent の中で tool が呼ばれた時は測らない (使用量は main の
 
 `Stop` から喋ると継続ターンが 1 本起きるが、そこで読まれる prefix は既に prompt cache に載っているので、跨ぎ 1 回のコストは cache read と数十 token の write に収まる。この程度なら、どうせ起きるターンまで文面を持ち越す理由が無い。継続ターンの `Stop` では測るだけで喋らない。
 
-latch は plugin 専用の store に session ごとに band を 1 個持つだけ。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日触られていない session の latch は消える。
+latch は plugin 専用の store に session ごとに band を 1 個持つだけ。**上がった時だけ喋り、下がった時は黙って戻す**ので、`/compact` や `/clear` の後に閾値が再武装され、かつ「下がりました」という無意味な通知も出ない。resume しても latch は残るので、通知済みの閾値をもう一度喋らない。30 日計測されていない session の latch は消える (同じ帯のままでも、計測があれば 1 日ごとに時刻を更新する)。
 
 設計判断の記録: [DR-0003](./docs/decisions/DR-0003-mods-implementation.md)。
 

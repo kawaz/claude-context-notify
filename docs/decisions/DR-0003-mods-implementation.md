@@ -63,7 +63,8 @@ Claude Code の plugin は Claude Mods (TypeScript の function hook、`hooks/ho
 - 帯 = 到達した閾値のうち最も高いもの (どの閾値にも届かなければ 0)。帯が latch と同じなら何もしない
 - 上がって閾値に入った時だけ喋る。2 段飛んだ時 (20% → 45%) は到達した最上位の帯だけを喋る
 - **下がった時は黙って latch を戻す。** compact / clear で使用量は下がる。「一度撃ったら二度と撃たない」にすると compact 後に鳴らなくなり、下がったことを喋ると compact 直後に無意味な通知が出る
-- `session.start` で、`updatedAt` が 30 日より前のキー (と形の読めないキー) を消す。`$.store` は全体で 4 MiB までなので、終わった session の latch を溜め続けない
+- `updatedAt` は最後に計測した時刻を表す。帯が変わった時に書き、帯が同じままでも前回の `updatedAt` から 1 日以上経っていれば書き直す (計測のたびに store へ書かないため)
+- `session.start` で、`updatedAt` が 30 日より前のキー (と形の読めないキー) を消す。`$.store` は全体で 4 MiB までなので、終わった session の latch を溜め続けない。30 日以上計測の無かった session を後で resume すると、latch が消えていて通知済みの閾値をもう一度喋る
 
 **`$.state` は使わない。** `/clear` でも resume でも消えるので、resume した session が通知済みの閾値をもう一度喋ってしまう。
 
